@@ -1,12 +1,8 @@
-import React, { useState } from 'react';
-
-const SAMPLE = [
-    { id: 'TXN-1', total: 250, status: 'Completed' },
-    { id: 'TXN-2', total: 100, status: 'Voided' },
-];
+import React, { useContext } from 'react';
+import { AuthContext } from '../App';
 
 function Transactions() {
-    const [transactions] = useState(SAMPLE);
+    const { auditLog } = useContext(AuthContext);
 
     return (
         <div>
@@ -17,18 +13,30 @@ function Transactions() {
                     <thead>
                         <tr>
                             <th>ID</th>
+                            <th>Type</th>
+                            <th>Cashier</th>
                             <th>Total</th>
-                            <th>Status</th>
+                            <th>Time</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {transactions.map(t => (
-                            <tr key={t.id}>
-                                <td>{t.id}</td>
-                                <td>₱{t.total}</td>
-                                <td>{t.status}</td>
+                        {auditLog.length === 0 ? (
+                            <tr>
+                                <td colSpan={5} className="text-center">
+                                    No transactions logged yet.
+                                </td>
                             </tr>
-                        ))}
+                        ) : (
+                            auditLog.map(t => (
+                                <tr key={t.id}>
+                                    <td>{t.id}</td>
+                                    <td>{t.type}</td>
+                                    <td>{t.cashier}</td>
+                                    <td>₱{t.total}</td>
+                                    <td>{new Date(t.time).toLocaleString()}</td>
+                                </tr>
+                            ))
+                        )}
                     </tbody>
                 </table>
             </div>
