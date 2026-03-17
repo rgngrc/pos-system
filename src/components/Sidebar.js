@@ -8,6 +8,7 @@ const NAV_ITEMS = [
     { path: '/discounts', label: 'Discounts', roles: ['Cashier'] },
     { path: '/transactions', label: 'Transactions', roles: ['Cashier', 'Supervisor'] },
     { path: '/products', label: 'Products', roles: ['Administrator'] },
+    { path: '/users', label: 'Users', roles: ['Administrator'] },
 ];
 
 function Sidebar() {

@@ -1,14 +1,8 @@
 import React, { useState, useContext } from 'react';
 import { AuthContext } from '../App';
 
-const DEMO_USERS = [
-    { username: 'cashier1', password: 'pass123', role: 'Cashier', name: 'Juan dela Cruz' },
-    { username: 'supervisor1', password: 'pass123', role: 'Supervisor', name: 'Maria Santos' },
-    { username: 'admin1', password: 'pass123', role: 'Administrator', name: 'Pedro Reyes' },
-];
-
 function Login() {
-    const { login } = useContext(AuthContext);
+    const { login, users } = useContext(AuthContext);
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
@@ -19,15 +13,21 @@ function Login() {
             return;
         }
 
-        const found = DEMO_USERS.find(
+        const found = users.find(
             u => u.username === username && u.password === password
         );
 
-        if (found) {
-            login(found);
-        } else {
+        if (!found) {
             setError('Invalid username or password.');
+            return;
         }
+
+        if (!found.active) {
+            setError('This account is deactivated. Contact administrator.');
+            return;
+        }
+
+        login(found);
     };
 
     return (
