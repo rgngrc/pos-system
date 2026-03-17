@@ -1,38 +1,57 @@
-.App {
-  text-align: center;
+/* =====================================================
+   SariPh Retail Store — Global Style Layer
+   "Toppings on Ice" Design System
+   ===================================================== */
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+  background-color: #F1F5F9;
+  color: #1E293B;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
 }
 
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #F1F5F9; border-radius: 10px; }
+::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+
+/* Input / Select Focus */
+.form-control:focus,
+.form-select:focus {
+  border-color: #667eea !important;
+  box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.15) !important;
+  outline: none !important;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
+/* Bootstrap card override */
+.card {
+  border-radius: 20px !important;
+  border: 1px solid #F1F5F9 !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06) !important;
 }
 
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
+/* Table rows */
+tbody tr { transition: background 0.15s ease; }
+tbody tr:hover { background-color: #F8FAFC !important; }
+
+/* Buttons */
+button { transition: all 0.18s ease !important; }
+button:active { transform: scale(0.97) !important; }
+
+/* Main content padding */
+.flex-grow-1 { padding: 28px 32px !important; }
+
+/* Smooth page load */
+.flex-grow-1 > * {
+  animation: fadeUp 0.3s ease forwards;
 }
 
-.App-link {
-  color: #61dafb;
-}
-
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
