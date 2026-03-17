@@ -4,25 +4,25 @@ import { AuthContext } from '../App';
 
 // ✅ NAV_ITEMS roles — UNCHANGED, only added icon (display only)
 const NAV_ITEMS = [
-    { path: '/',             label: 'Dashboard',    roles: ['Cashier', 'Supervisor', 'Administrator'], icon: '📊' },
-    { path: '/sales',        label: 'New Sale',      roles: ['Cashier'],                               icon: '🛒' },
-    { path: '/discounts',    label: 'Discounts',     roles: ['Cashier'],                               icon: '🏷️' },
-    { path: '/transactions', label: 'Transactions',  roles: ['Cashier', 'Supervisor'],                 icon: '📋' },
-    { path: '/products',     label: 'Products',      roles: ['Administrator'],                         icon: '📦' },
-    { path: '/users',        label: 'Users',         roles: ['Administrator'],                         icon: '👥' },
+    { path: '/', label: 'Dashboard', roles: ['Cashier', 'Supervisor', 'Administrator'], icon: '📊' },
+    { path: '/sales', label: 'New Sale', roles: ['Cashier'], icon: '🛒' },
+    { path: '/discounts', label: 'Discounts', roles: ['Cashier'], icon: '🏷️' },
+    { path: '/transactions', label: 'Transactions', roles: ['Cashier', 'Supervisor'], icon: '📋' },
+    { path: '/products', label: 'Products', roles: ['Administrator'], icon: '📦' },
+    { path: '/users', label: 'Users', roles: ['Administrator'], icon: '👥' },
 ];
 
 function Sidebar() {
     // ✅ ALL LOGIC — COMPLETELY UNCHANGED
     const { user, logout } = useContext(AuthContext);
-    const navigate         = useNavigate();
-    const location         = useLocation();
-    const visibleItems     = NAV_ITEMS.filter(item => item.roles.includes(user?.role));
+    const navigate = useNavigate();
+    const location = useLocation();
+    const visibleItems = NAV_ITEMS.filter(item => item.roles.includes(user?.role));
 
     const rolePill = {
-        Administrator: { bg: 'rgba(99,102,241,0.25)',  text: '#A5B4FC' },
-        Supervisor:    { bg: 'rgba(16,185,129,0.25)',  text: '#6EE7B7' },
-        Cashier:       { bg: 'rgba(245,158,11,0.25)',  text: '#FCD34D' },
+        Administrator: { bg: 'rgba(99,102,241,0.25)', text: '#A5B4FC' },
+        Supervisor: { bg: 'rgba(16,185,129,0.25)', text: '#6EE7B7' },
+        Cashier: { bg: 'rgba(245,158,11,0.25)', text: '#FCD34D' },
     };
     const roleStyle = rolePill[user?.role] || { bg: 'rgba(255,255,255,0.1)', text: '#ccc' };
 
