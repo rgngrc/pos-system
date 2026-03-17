@@ -11,7 +11,7 @@ import Sidebar from './components/Sidebar';
 export const AuthContext = React.createContext(null);
 
 function App() {
-  const [user, setUser] = useState(null); // null = not logged in
+  const [user, setUser] = useState(null);
 
   const login = (userData) => setUser(userData);
   const logout = () => setUser(null);
@@ -20,10 +20,9 @@ function App() {
     <AuthContext.Provider value={{ user, login, logout }}>
       <BrowserRouter>
         {user ? (
-          /* Logged in — show sidebar + page content */
-          <div style={styles.appLayout}>
+          <div className="d-flex min-vh-100 bg-light">
             <Sidebar />
-            <div style={styles.content}>
+            <div className="flex-grow-1 p-4">
               <Routes>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/products" element={<Products />} />
@@ -35,7 +34,6 @@ function App() {
             </div>
           </div>
         ) : (
-          /* Not logged in — show login page */
           <Routes>
             <Route path="*" element={<Login />} />
           </Routes>
@@ -44,10 +42,5 @@ function App() {
     </AuthContext.Provider>
   );
 }
-
-const styles = {
-  appLayout: { display: 'flex', minHeight: '100vh', background: '#f4f6f9' },
-  content: { flex: 1, padding: '32px', overflowY: 'auto' },
-};
 
 export default App;
