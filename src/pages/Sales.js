@@ -1,5 +1,6 @@
 import React, { useState, useContext } from 'react';
 import { AuthContext } from '../App';
+import ReceiptDisplay from '../components/ReceiptDisplay';
 
 const DISCOUNT_TYPES = [
     { type: 'Senior Citizen', rate: 0.20 },
@@ -9,68 +10,104 @@ const DISCOUNT_TYPES = [
 ];
 
 function Sales() {
-    const { products } = useContext(AuthContext);
+    const { user, products, setProducts, auditLog, setAuditLog } = useContext(AuthContext);
+    const isCashier = user?.role === 'Cashier';
 
     const [search, setSearch] = useState('');
     const [cart, setCart] = useState([]);
-    const [message, setMessage] = useState('');
-
     const [discount, setDiscount] = useState(null);
     const [selectedType, setSelectedType] = useState('');
     const [idNumber, setIdNumber] = useState('');
     const [error, setError] = useState('');
-
     const [receipt, setReceipt] = useState(null);
     const [isReprint, setIsReprint] = useState(false);
+    const [showPostVoidModal, setShowPostVoidModal] = useState(false);
+    const [postVoidReason, setPostVoidReason] = useState('');
+    const [showPaymentModal, setShowPaymentModal] = useState(false);
+    const [paymentAmount, setPaymentAmount] = useState('');
+    const [paymentMethod, setPaymentMethod] = useState('Cash');
 
-    const [voidLogs, setVoidLogs] = useState([]);
-    const [cancelLogs, setCancelLogs] = useState([]);
-    const [reprintLogs, setReprintLogs] = useState([]);
-
-    const results = products
-        .filter(p => p.active)
-        .filter(p =>
-            p.name.toLowerCase().includes(search.toLowerCase()) ||
-            p.barcode === search
+    if (!isCashier) {
+        return (
+            <div style={{ background: '#FFFBEB', border: '1.5px solid #FDE68A', borderRadius: '16px', padding: '18px 22px', display: 'flex', alignItems: 'center', gap: '10px', color: '#92400E', fontSize: '14px', fontWeight: 500 }}>
+                Only Cashiers can process sales.
+            </div>
         );
+    }
+
+    const activeProducts = products.filter(p => p.active);
+    const results = activeProducts.filter(p =>
+        p.name.toLowerCase().includes(search.toLowerCase()) || p.barcode === search
+    );
 
     const addToCart = (product) => {
+        if (product.stock === 0) { setError('Product is out of stock'); return; }
         const existing = cart.find(i => i.id === product.id);
         if (existing) {
-            setCart(cart.map(i =>
-                i.id === product.id ? { ...i, qty: i.qty + 1 } : i
-            ));
+            if (existing.qty + 1 > product.stock) { setError(`Only ${product.stock} available in stock`); return; }
+            setCart(cart.map(i => i.id === product.id ? { ...i, qty: i.qty + 1 } : i));
         } else {
             setCart([...cart, { ...product, qty: 1 }]);
         }
         setSearch('');
+        setError('');
     };
 
-    const removeItem = (id) => {
-        const reason = prompt("Reason for void:");
-        if (!reason) return;
+    const updateQty = (id, delta) => {
+        const item = cart.find(i => i.id === id);
+        const product = products.find(p => p.id === id);
+        if (!item || !product) return;
+        const newQty = item.qty + delta;
+        if (newQty > product.stock) { setError(`Only ${product.stock} available in stock`); return; }
+        if (newQty < 1) return;
+        setCart(cart.map(i => i.id === id ? { ...i, qty: newQty } : i));
+        setError('');
+    };
 
-        setVoidLogs([...voidLogs, {
-            itemId: id,
-            reason,
-            time: new Date().toLocaleString()
+    const voidItem = (id) => {
+        const item = cart.find(i => i.id === id);
+        if (!item) return;
+        const reason = prompt(`Reason for voiding "${item.name}"?`);
+        if (!reason || !reason.trim()) return;
+        setAuditLog(prev => [...prev, {
+            id: Date.now() + Math.random(),
+            type: 'Void Item',
+            status: 'Pending',
+            actor: user?.username,
+            actorName: user?.name,
+            itemName: item.name,
+            itemQty: item.qty,
+            total: item.price * item.qty,
+            reason: reason.trim(),
+            timestamp: new Date().toISOString(),
         }]);
-
         setCart(cart.filter(i => i.id !== id));
+        alert(`"${item.name}" voided and logged.`);
     };
 
     const cancelSale = () => {
-        if (!window.confirm("Cancel sale?")) return;
-
-        setCancelLogs([...cancelLogs, {
-            time: new Date().toLocaleString(),
-            itemCount: cart.length
+        if (cart.length === 0) { alert('No sale to cancel'); return; }
+        if (!window.confirm('Cancel entire sale? This action will be logged.')) return;
+        const itemSummary = cart.map(i => `${i.name} x${i.qty}`).join(', ');
+        const saleTotal = cart.reduce((sum, i) => sum + i.price * i.qty, 0);
+        setAuditLog(prev => [...prev, {
+            id: Date.now(),
+            type: 'Canceled Sale',
+            status: 'Canceled',
+            actor: user?.username,
+            actorName: user?.name,
+            itemName: itemSummary,
+            itemQty: cart.reduce((sum, i) => sum + i.qty, 0),
+            total: saleTotal,
+            reason: 'Sale canceled before payment',
+            timestamp: new Date().toISOString(),
         }]);
-
         setCart([]);
         setDiscount(null);
         setSelectedType('');
         setIdNumber('');
+        setError('');
+        alert('Sale canceled and logged.');
     };
 
     const subtotal = cart.reduce((sum, i) => sum + i.price * i.qty, 0);
@@ -78,28 +115,12 @@ function Sales() {
     const finalTotal = subtotal - discountAmount;
 
     const applyDiscount = () => {
-        if (discount) {
-            setError("Only one discount allowed");
-            return;
-        }
-        if (!selectedType) {
-            setError('Select discount type');
-            return;
-        }
-        if (!idNumber.trim()) {
-            setError('ID required');
-            return;
-        }
-
+        if (!selectedType) { setError('Please select a discount type'); return; }
+        if (!idNumber.trim()) { setError('Please enter or scan an ID number'); return; }
         const disc = DISCOUNT_TYPES.find(d => d.type === selectedType);
-
-        setDiscount({
-            type: selectedType,
-            rate: disc.rate,
-            id: idNumber
-        });
-
+        setDiscount({ ...disc, id: idNumber });
         setError('');
+        alert(`${selectedType} discount applied (${(disc.rate * 100).toFixed(0)}% off)`);
     };
 
     const removeDiscount = () => {
@@ -108,256 +129,291 @@ function Sales() {
         setIdNumber('');
     };
 
-    const completeSale = () => {
-        if (cart.length === 0) return;
+    const openPaymentModal = () => {
+        if (cart.length === 0) { alert('Cart is empty'); return; }
+        setPaymentAmount('');
+        setPaymentMethod('Cash');
+        setShowPaymentModal(true);
+        setError('');
+    };
 
+    const processPayment = () => {
+        const amount = parseFloat(paymentAmount) || 0;
+        if (amount <= 0) { setError('Please enter a valid amount'); return; }
+        if (amount < finalTotal) {
+            setError(`Insufficient payment. Total: P${finalTotal.toLocaleString()}, Received: P${amount.toLocaleString()}`);
+            return;
+        }
+        setShowPaymentModal(false);
+        completeSale(amount);
+    };
+
+    const completeSale = (paidAmount) => {
+        const txId = Date.now();
+        const change = paidAmount - finalTotal;
         const newReceipt = {
-            items: cart,
+            txId,
+            items: cart.map(i => ({ ...i })),
             subtotal,
             discountAmount,
             finalTotal,
             discountType: discount?.type || null,
             discountId: discount?.id || null,
-            date: new Date().toLocaleString()
+            paidAmount,
+            change,
+            paymentMethod,
+            cashier: user?.username,
+            cashierName: user?.name,
+            date: new Date().toLocaleString(),
         };
-
-        localStorage.setItem("lastReceipt", JSON.stringify(newReceipt));
-
+        cart.forEach(item => {
+            setAuditLog(prev => [...prev, {
+                id: Date.now() + Math.random(),
+                type: 'Completed Sale',
+                status: 'Completed',
+                actor: user?.username,
+                actorName: user?.name,
+                itemName: item.name,
+                itemQty: item.qty,
+                total: item.price * item.qty,
+                reason: 'Sale completed',
+                timestamp: new Date().toISOString(),
+            }]);
+        });
+        setProducts(prev => prev.map(p => {
+            const inCart = cart.find(i => i.id === p.id);
+            return inCart ? { ...p, stock: Math.max(0, p.stock - inCart.qty) } : p;
+        }));
+        localStorage.setItem('lastReceipt', JSON.stringify(newReceipt));
         setReceipt(newReceipt);
         setIsReprint(false);
-
-        setMessage(`Sale complete! ₱${finalTotal.toFixed(2)}`);
-
         setCart([]);
         setDiscount(null);
         setSelectedType('');
         setIdNumber('');
+        setPaymentAmount('');
+        setPaymentMethod('Cash');
+        setError('');
+    };
+
+    const openPostVoid = () => {
+        if (!localStorage.getItem('lastReceipt')) { alert('No recent completed sale to post-void'); return; }
+        setPostVoidReason('');
+        setShowPostVoidModal(true);
+    };
+
+    const submitPostVoid = () => {
+        if (!postVoidReason.trim()) { alert('Please enter a reason for post-void'); return; }
+        const saved = JSON.parse(localStorage.getItem('lastReceipt'));
+        const productNames = saved.items.map(i => i.name).join(', ');
+        setAuditLog(prev => [...prev, {
+            id: Date.now(),
+            type: 'Post-Void Request',
+            status: 'Pending',
+            actor: user?.username,
+            actorName: user?.name,
+            itemName: productNames,
+            itemQty: saved.items.length,
+            total: saved.finalTotal,
+            reason: postVoidReason.trim(),
+            timestamp: new Date().toISOString(),
+            originalReceipt: saved,
+            transactionId: saved.txId,
+        }]);
+        setShowPostVoidModal(false);
+        setPostVoidReason('');
+        alert('Post-void request submitted for supervisor approval');
     };
 
     const reprintReceipt = () => {
-        const saved = localStorage.getItem("lastReceipt");
-        if (!saved) {
-            alert("No receipt found");
-            return;
-        }
-
-        const parsed = JSON.parse(saved);
-
-        setReprintLogs([...reprintLogs, {
-            time: new Date().toLocaleString()
+        const saved = localStorage.getItem('lastReceipt');
+        if (!saved) { alert('No receipt to reprint'); return; }
+        const rec = JSON.parse(saved);
+        setAuditLog(prev => [...prev, {
+            id: Date.now(),
+            type: 'Receipt Reprint',
+            status: 'Completed',
+            actor: user?.username,
+            actorName: user?.name,
+            itemName: `Transaction #${rec.txId}`,
+            itemQty: rec.items.length,
+            total: rec.finalTotal,
+            reason: 'Receipt reprinted',
+            timestamp: new Date().toISOString(),
         }]);
-
-        setReceipt(parsed);
+        setReceipt(rec);
         setIsReprint(true);
     };
 
     const maskId = (id) =>
         id && id.length > 4 ? '*'.repeat(id.length - 4) + id.slice(-4) : id;
 
-    const cardStyle = {
-        background: 'white',
-        borderRadius: '18px',
-        padding: '20px',
-        boxShadow: '0 6px 18px rgba(0,0,0,0.06)',
-        border: '1px solid #E5E7EB'
-    };
+    const card = { background: 'white', borderRadius: '18px', padding: '20px', boxShadow: '0 4px 20px rgba(0,0,0,0.06)', border: '1px solid #E5E7EB', marginBottom: '16px' };
+    const inp = { width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #E2E8F0', fontSize: '13px', outline: 'none', marginBottom: '10px' };
+    const btnPrimary = { width: '100%', padding: '11px', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #667eea, #764ba2)', color: 'white', fontWeight: 700, fontSize: '13px', cursor: 'pointer', marginBottom: '8px' };
+    const btnSecondary = { width: '100%', padding: '11px', borderRadius: '10px', border: '1.5px solid #E2E8F0', background: 'white', color: '#1E293B', fontWeight: 600, fontSize: '13px', cursor: 'pointer', marginBottom: '8px' };
+    const btnDanger = { width: '100%', padding: '11px', borderRadius: '10px', border: 'none', background: '#EF4444', color: 'white', fontWeight: 700, fontSize: '13px', cursor: 'pointer', marginBottom: '8px' };
 
-    const inputStyle = {
-        width: '100%',
-        padding: '10px',
-        borderRadius: '10px',
-        border: '1px solid #CBD5E1',
-        marginBottom: '10px'
-    };
-
-    const buttonPrimary = {
-        width: '100%',
-        padding: '10px',
-        borderRadius: '10px',
-        border: 'none',
-        background: '#6366F1',
-        color: 'white',
-        fontWeight: '600',
-        cursor: 'pointer',
-        marginBottom: '8px'
-    };
-
-    const buttonDanger = {
-        padding: '6px 10px',
-        borderRadius: '8px',
-        border: 'none',
-        background: '#EF4444',
-        color: 'white',
-        cursor: 'pointer'
-    };
+    if (receipt) {
+        return (
+            <ReceiptDisplay
+                receipt={receipt}
+                isReprint={isReprint}
+                maskId={maskId}
+                onNewSale={() => { setReceipt(null); setCart([]); }}
+                onReprint={reprintReceipt}
+            />
+        );
+    }
 
     return (
-        <div style={{ fontFamily: "'Segoe UI', sans-serif" }}>
-            <h3 style={{ fontWeight: 800, marginBottom: '15px' }}>🛒 New Sale</h3>
-
-            <div className="row g-3">
-
-                <div className="col-md-8">
-
-                    <div style={{ ...cardStyle, marginBottom: '16px' }}>
-                        <h6>🔍 Product Search</h6>
-                        <input
-                            style={inputStyle}
-                            placeholder="Search product..."
-                            value={search}
-                            onChange={e => setSearch(e.target.value)}
-                        />
-
-                        {search && results.map(p => (
-                            <div key={p.id} onClick={() => addToCart(p)} style={{
-                                padding: '10px',
-                                borderRadius: '10px',
-                                background: '#F8FAFC',
-                                marginTop: '5px',
-                                cursor: 'pointer'
-                            }}>
-                                {p.name} — ₱{p.price}
-                            </div>
-                        ))}
-                    </div>
-
-                    <div style={cardStyle}>
-                        <h6>🛒 Cart</h6>
-
-                        {cart.length === 0 ? (
-                            <p>Cart is empty</p>
-                        ) : (
-                            cart.map(item => (
-                                <div key={item.id} style={{
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    marginBottom: '8px'
-                                }}>
-                                    <span>{item.name} x{item.qty}</span>
-                                    <span>₱{item.price * item.qty}</span>
-                                    <button style={buttonDanger} onClick={() => removeItem(item.id)}>Void</button>
+        <div className="row g-4">
+            <div className="col-lg-7">
+                <div style={card}>
+                    <h5 style={{ fontWeight: 800, marginBottom: '16px' }}>Search Products</h5>
+                    <input type="text" placeholder="Search by name or scan barcode..." value={search} onChange={e => setSearch(e.target.value)} style={inp} autoFocus />
+                    <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                        {results.length > 0
+                            ? results.map(p => (
+                                <div key={p.id} onClick={() => addToCart(p)}
+                                    style={{ background: p.stock === 0 ? '#FEF2F2' : '#F8FAFC', border: p.stock === 0 ? '1px solid #FECACA' : '1px solid #E2E8F0', borderRadius: '10px', padding: '12px', marginBottom: '10px', cursor: p.stock === 0 ? 'not-allowed' : 'pointer', opacity: p.stock === 0 ? 0.6 : 1 }}
+                                    onMouseEnter={e => p.stock > 0 && (e.currentTarget.style.background = '#EEF2FF')}
+                                    onMouseLeave={e => e.currentTarget.style.background = p.stock === 0 ? '#FEF2F2' : '#F8FAFC'}>
+                                    <div style={{ fontWeight: 700, marginBottom: '4px' }}>{p.name}</div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#64748B' }}>
+                                        <span>P{p.price.toLocaleString()}</span>
+                                        <span style={{ color: p.stock === 0 ? '#EF4444' : '#10B981', fontWeight: 700 }}>
+                                            {p.stock === 0 ? 'Out of Stock' : `${p.stock} in stock`}
+                                        </span>
+                                    </div>
                                 </div>
                             ))
-                        )}
-
-                        <button style={buttonPrimary} onClick={cancelSale}>
-                            Cancel Sale
-                        </button>
+                            : search
+                                ? <div style={{ color: '#94A3B8', textAlign: 'center', padding: '20px' }}>No products found</div>
+                                : <div style={{ color: '#CBD5E1', textAlign: 'center', padding: '40px', fontStyle: 'italic' }}>Start typing to search products...</div>
+                        }
                     </div>
-                </div>
-
-                <div className="col-md-4">
-
-                    <div style={{ ...cardStyle, marginBottom: '16px' }}>
-                        <h6>💳 Order Summary</h6>
-                        <p>Subtotal: ₱{subtotal.toFixed(2)}</p>
-                        <p style={{ color: '#EF4444' }}>Discount: -₱{discountAmount.toFixed(2)}</p>
-                        <h4>Total: ₱{finalTotal.toFixed(2)}</h4>
-                    </div>
-
-                    <div style={{ ...cardStyle, marginBottom: '16px' }}>
-                        <h6>🏷️ Apply Discount</h6>
-
-                        <select style={inputStyle} value={selectedType} onChange={e => setSelectedType(e.target.value)}>
-                            <option value="">Select discount</option>
-                            {DISCOUNT_TYPES.map(d => (
-                                <option key={d.type} value={d.type}>
-                                    {d.type} ({d.rate * 100}%)
-                                </option>
-                            ))}
-                        </select>
-
-                        <input
-                            style={inputStyle}
-                            placeholder="Enter ID number"
-                            value={idNumber}
-                            onChange={e => setIdNumber(e.target.value)}
-                        />
-
-                        <button style={buttonPrimary} onClick={applyDiscount}>Apply Discount</button>
-                        <button style={buttonDanger} onClick={removeDiscount}>Remove</button>
-
-                        {error && <p style={{ color: 'red' }}>{error}</p>}
-
-                        {discount && (
-                            <p style={{ color: 'green' }}>
-                                {discount.type} applied (ID: {maskId(discount.id)})
-                            </p>
-                        )}
-                    </div>
-
-                    <div style={cardStyle}>
-                        <button style={buttonPrimary} onClick={completeSale} disabled={cart.length === 0}>
-                            Complete Sale
-                        </button>
-
-                        <button style={buttonPrimary} onClick={reprintReceipt}>
-                            Reprint Receipt
-                        </button>
-
-                        {message && <p>{message}</p>}
-                    </div>
-
-                    {receipt && (
-                        <div style={{ ...cardStyle, marginTop: '20px' }}>
-                            <div style={{
-                                background: 'linear-gradient(160deg, #FAFAFA 0%, #F1F5F9 100%)',
-                                borderRadius: '16px',
-                                padding: '24px',
-                                border: '1.5px dashed #CBD5E1',
-                                fontFamily: "'Courier New', monospace",
-                            }}>
-
-                                <div style={{
-                                    textAlign: 'center',
-                                    marginBottom: '18px',
-                                    borderBottom: '1px dashed #CBD5E1',
-                                    paddingBottom: '14px'
-                                }}>
-                                    <div style={{ fontSize: '22px' }}>🛍️</div>
-                                    <div style={{ fontWeight: 800 }}>SariPh Retail Store</div>
-                                    <div style={{ fontSize: '11px' }}>{receipt.date}</div>
-                                </div>
-
-                                {receipt.items.map(item => (
-                                    <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                        <span>{item.name} x{item.qty}</span>
-                                        <span>₱{(item.price * item.qty).toFixed(2)}</span>
-                                    </div>
-                                ))}
-
-                                <hr />
-
-                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                    <span>Subtotal</span>
-                                    <span>₱{receipt.subtotal.toFixed(2)}</span>
-                                </div>
-
-                                {receipt.discountType && (
-                                    <>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#EF4444' }}>
-                                            <span>{receipt.discountType}</span>
-                                            <span>-₱{receipt.discountAmount.toFixed(2)}</span>
-                                        </div>
-
-                                        <div style={{ fontSize: '12px', textAlign: 'right' }}>
-                                            ID: {maskId(receipt.discountId)}
-                                        </div>
-                                    </>
-                                )}
-
-                                <hr />
-
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
-                                    <span>TOTAL</span>
-                                    <span>₱{receipt.finalTotal.toFixed(2)}</span>
-                                </div>
-
-                            </div>
-                        </div>
-                    )}
                 </div>
             </div>
+
+            <div className="col-lg-5">
+                <div style={card}>
+                    <h5 style={{ fontWeight: 800, marginBottom: '16px' }}>Cart ({cart.length})</h5>
+                    {error && <div style={{ background: '#FEF2F2', color: '#EF4444', padding: '10px', borderRadius: '8px', marginBottom: '12px', fontSize: '12px', fontWeight: 600 }}>{error}</div>}
+
+                    <div style={{ maxHeight: '300px', overflowY: 'auto', marginBottom: '16px', minHeight: '100px' }}>
+                        {cart.length > 0
+                            ? cart.map(item => (
+                                <div key={item.id} style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '10px', marginBottom: '10px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                        <div style={{ fontWeight: 700, fontSize: '13px' }}>{item.name}</div>
+                                        <button onClick={() => voidItem(item.id)} style={{ background: '#EF4444', color: 'white', border: 'none', padding: '4px 8px', borderRadius: '6px', cursor: 'pointer', fontSize: '10px', fontWeight: 600 }}>Void</button>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
+                                        <div>
+                                            <button onClick={() => updateQty(item.id, -1)} style={{ background: '#E2E8F0', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}>-</button>
+                                            <span style={{ margin: '0 10px', fontWeight: 700 }}>{item.qty}</span>
+                                            <button onClick={() => updateQty(item.id, 1)} style={{ background: '#E2E8F0', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}>+</button>
+                                        </div>
+                                        <div style={{ fontWeight: 700 }}>P{(item.price * item.qty).toLocaleString()}</div>
+                                    </div>
+                                </div>
+                            ))
+                            : <div style={{ color: '#CBD5E1', textAlign: 'center', padding: '40px 20px', fontStyle: 'italic' }}>Cart is empty.</div>
+                        }
+                    </div>
+
+                    <div style={{ background: '#F8FAFC', padding: '12px', borderRadius: '8px', marginBottom: '16px' }}>
+                        <h6 style={{ fontWeight: 700, marginBottom: '10px', fontSize: '12px' }}>Apply Discount</h6>
+                        {discount ? (
+                            <div style={{ background: '#ECFDF5', border: '1px solid #86EFAC', padding: '10px', borderRadius: '6px', fontSize: '12px' }}>
+                                <div style={{ fontWeight: 700, marginBottom: '4px' }}>✓ {discount.type}</div>
+                                <div style={{ color: '#64748B' }}>ID: {maskId(discount.id)}</div>
+                                <button onClick={removeDiscount} style={{ background: '#EF4444', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontWeight: 600, marginTop: '8px', width: '100%' }}>Remove</button>
+                            </div>
+                        ) : (
+                            <>
+                                <select value={selectedType} onChange={e => setSelectedType(e.target.value)} style={{ ...inp, marginBottom: '8px' }} disabled={cart.length === 0}>
+                                    <option value="">Select discount type...</option>
+                                    {DISCOUNT_TYPES.map(d => <option key={d.type} value={d.type}>{d.type} ({(d.rate * 100).toFixed(0)}%)</option>)}
+                                </select>
+                                <input type="text" placeholder="Enter or scan ID..." value={idNumber} onChange={e => setIdNumber(e.target.value)} style={{ ...inp, marginBottom: '8px' }} disabled={cart.length === 0} />
+                                <button onClick={applyDiscount} style={{ ...btnPrimary, marginBottom: 0, opacity: cart.length === 0 ? 0.5 : 1 }} disabled={cart.length === 0}>Apply Discount</button>
+                            </>
+                        )}
+                    </div>
+
+                    <div style={{ background: '#F8FAFC', padding: '12px', borderRadius: '8px', marginBottom: '16px', fontSize: '13px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                            <span>Subtotal:</span><span style={{ fontWeight: 700 }}>P{subtotal.toLocaleString()}</span>
+                        </div>
+                        {discount && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', color: '#10B981', fontWeight: 700 }}>
+                                <span>Discount:</span><span>-P{discountAmount.toLocaleString()}</span>
+                            </div>
+                        )}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', background: '#667eea', color: 'white', padding: '10px', borderRadius: '6px', fontWeight: 800, fontSize: '16px', marginTop: '8px' }}>
+                            <span>TOTAL:</span><span>P{finalTotal.toLocaleString()}</span>
+                        </div>
+                    </div>
+
+                    {/* ALWAYS VISIBLE BUTTONS */}
+                    <button onClick={openPaymentModal} style={{ ...btnPrimary, opacity: cart.length === 0 ? 0.5 : 1 }} disabled={cart.length === 0}>Proceed to Payment</button>
+                    <button onClick={openPostVoid} style={btnSecondary}>Request Post-Void</button>
+                    <button onClick={cancelSale} style={{ ...btnDanger, opacity: cart.length === 0 ? 0.5 : 1 }} disabled={cart.length === 0}>Cancel Sale</button>
+                </div>
+            </div>
+
+            {/* Modals remain same */}
+            {showPaymentModal && (
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+                    <div style={{ background: 'white', borderRadius: '16px', padding: '24px', maxWidth: '400px', width: '90%' }}>
+                        <h5 style={{ fontWeight: 800, marginBottom: '16px' }}>Payment</h5>
+                        <div style={{ background: '#F8FAFC', padding: '12px', borderRadius: '8px', marginBottom: '16px', fontSize: '13px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                <span style={{ color: '#94A3B8' }}>Subtotal:</span><span style={{ fontWeight: 700 }}>P{subtotal.toLocaleString()}</span>
+                            </div>
+                            {discount && (
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', color: '#10B981' }}>
+                                    <span>Discount:</span><span style={{ fontWeight: 700 }}>-P{discountAmount.toLocaleString()}</span>
+                                </div>
+                            )}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: '14px', paddingTop: '6px', borderTop: '1px solid #E2E8F0' }}>
+                                <span>Total Amount:</span><span>P{finalTotal.toLocaleString()}</span>
+                            </div>
+                        </div>
+                        {error && <div style={{ background: '#FEF2F2', color: '#EF4444', padding: '10px', borderRadius: '8px', marginBottom: '12px', fontSize: '12px', fontWeight: 600 }}>{error}</div>}
+                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: 600 }}>Payment Method:</label>
+                        <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #E2E8F0', marginBottom: '14px', fontSize: '12px', outline: 'none' }}>
+                            <option value="Cash">Cash</option>
+                            <option value="Debit Card">Debit Card</option>
+                            <option value="Credit Card">Credit Card</option>
+                            <option value="GCash">GCash</option>
+                        </select>
+                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: 600 }}>Amount Received:</label>
+                        <input type="number" placeholder="Enter amount..." value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #E2E8F0', marginBottom: '16px', fontSize: '13px', outline: 'none' }} autoFocus />
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                            <button onClick={() => { setShowPaymentModal(false); setError(''); }} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #E2E8F0', background: 'white', cursor: 'pointer', fontWeight: 600 }}>Cancel</button>
+                            <button onClick={processPayment} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: '#10B981', color: 'white', cursor: 'pointer', fontWeight: 700 }}>Complete Payment</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showPostVoidModal && (
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+                    <div style={{ background: 'white', borderRadius: '16px', padding: '24px', maxWidth: '400px', width: '90%' }}>
+                        <h5 style={{ fontWeight: 800, marginBottom: '8px' }}>Request Post-Void</h5>
+                        <p style={{ color: '#64748B', marginBottom: '16px', fontSize: '13px' }}>Enter a reason for supervisor review.</p>
+                        <textarea placeholder="Reason..." value={postVoidReason} onChange={e => setPostVoidReason(e.target.value)}
+                            style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '12px', minHeight: '100px', marginBottom: '16px', fontFamily: 'inherit', outline: 'none', resize: 'vertical' }} autoFocus />
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                            <button onClick={() => setShowPostVoidModal(false)} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #E2E8F0', background: 'white', cursor: 'pointer', fontWeight: 600 }}>Cancel</button>
+                            <button onClick={submitPostVoid} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: '#667eea', color: 'white', cursor: 'pointer', fontWeight: 700 }}>Submit</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
