@@ -2,56 +2,45 @@ import React, { useState, useContext } from 'react';
 import { AuthContext } from '../App';
 
 function Products() {
-  // ── UNCHANGED logic vars ───────────────────────────────────────────────────
   const { user, products, setProducts, productLog, setProductLog } = useContext(AuthContext);
-  // NOTE: products now comes from App.js context (shared with Sales.js)
-
   const isAdmin = user?.role === 'Administrator';
-  const [search, setSearch]       = useState('');
-  const [form, setForm]           = useState({ name: '', barcode: '', price: '', stock: '' });
-  const [error, setError]         = useState('');
+  const [search, setSearch] = useState('');
+  const [form, setForm] = useState({ name: '', barcode: '', price: '', stock: '' });
+  const [error, setError] = useState('');
   const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm]   = useState({ name: '', barcode: '', price: '', stock: '' });
+  const [editForm, setEditForm] = useState({ name: '', barcode: '', price: '', stock: '' });
 
-  // ── US1: product change log helper ────────────────────────────────────────
   const addProductLog = (action) => {
-    setProductLog(prev => [
-      ...prev,
-      {
-        id: Date.now(),
-        timestamp: new Date().toLocaleString(),
-        userId: user?.username || 'unknown',
-        action,
-      },
-    ]);
+    setProductLog(prev => [...prev, {
+      id: Date.now(),
+      timestamp: new Date().toLocaleString(),
+      userId: user?.username || 'unknown',
+      action,
+    }]);
   };
 
-  // ── UNCHANGED filtered list ────────────────────────────────────────────────
   const filtered = products.filter(p =>
     p.name.toLowerCase().includes(search.toLowerCase()) || p.barcode.includes(search)
   );
 
-  // ── UNCHANGED addProduct + US1 log ────────────────────────────────────────
   const addProduct = () => {
     if (!isAdmin) { setError('Only administrators can add products.'); return; }
     if (!form.name || !form.barcode || !form.price || !form.stock) { setError('All fields are required.'); return; }
     if (products.some(p => p.barcode === form.barcode)) { setError('Barcode must be unique.'); return; }
     const newProduct = { id: Date.now(), ...form, price: +form.price, stock: +form.stock, active: true };
     setProducts([...products, newProduct]);
-    addProductLog(`Added product: "${newProduct.name}" (Barcode: ${newProduct.barcode}, Price: ₱${newProduct.price})`); // US1
+    addProductLog(`Added product: "${newProduct.name}" (Barcode: ${newProduct.barcode}, Price: ₱${newProduct.price})`);
     setForm({ name: '', barcode: '', price: '', stock: '' });
     setError('');
   };
 
-  // ── UNCHANGED toggleActive + US1 log ──────────────────────────────────────
   const toggleActive = (id) => {
     if (!isAdmin) { setError('Only administrators can change product status.'); return; }
     const product = products.find(p => p.id === id);
     setProducts(products.map(p => p.id === id ? { ...p, active: !p.active } : p));
-    addProductLog(`${product.active ? 'Deactivated' : 'Activated'} product: "${product.name}"`); // US1
+    addProductLog(`${product.active ? 'Deactivated' : 'Activated'} product: "${product.name}"`);
   };
 
-  // ── UNCHANGED startEditing ────────────────────────────────────────────────
   const startEditing = (product) => {
     if (!isAdmin) return;
     setEditingId(product.id);
@@ -59,7 +48,6 @@ function Products() {
     setError('');
   };
 
-  // ── UNCHANGED saveEdit + US1 log ──────────────────────────────────────────
   const saveEdit = (id) => {
     if (!isAdmin) return;
     if (!editForm.name || !editForm.barcode || editForm.price === '' || editForm.stock === '') { setError('All fields are required to update product.'); return; }
@@ -69,28 +57,23 @@ function Products() {
         ? { ...p, name: editForm.name, barcode: editForm.barcode, price: +editForm.price, stock: +editForm.stock }
         : p
     ));
-    addProductLog(`Updated product ID ${id}: "${editForm.name}" — Price: ₱${editForm.price}, Stock: ${editForm.stock}`); // US1
+    addProductLog(`Updated product ID ${id}: "${editForm.name}" — Price: ₱${editForm.price}, Stock: ${editForm.stock}`);
     setEditingId(null);
     setError('');
   };
 
   const cancelEdit = () => { setEditingId(null); setError(''); };
 
-  // ── UI helpers (display only) ──────────────────────────────────────────────
   const cardStyle = { background: 'white', borderRadius: '20px', padding: '24px', boxShadow: '0 4px 20px rgba(0,0,0,0.07)', border: '1px solid #F1F5F9', marginBottom: '20px' };
   const inputStyle = { borderRadius: '10px', border: '2px solid #E2E8F0', padding: '10px 14px', fontSize: '13px', width: '100%', outline: 'none' };
   const btnBase = { padding: '7px 16px', borderRadius: '9px', border: 'none', fontSize: '12px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s' };
 
   return (
     <div style={{ fontFamily: "'Segoe UI', sans-serif" }}>
-
-      {/* Page Header */}
       <div style={{ marginBottom: '24px' }}>
         <h3 style={{ fontWeight: 800, color: '#1E293B', margin: 0, fontSize: '22px' }}>📦 Product Management</h3>
         <p style={{ color: '#94A3B8', fontSize: '13px', margin: '4px 0 0' }}>Manage your store inventory — changes are logged automatically</p>
       </div>
-
-      {/* Add Product Form */}
       {isAdmin ? (
         <div style={cardStyle}>
           <h6 style={{ fontWeight: 700, color: '#374151', marginBottom: '16px', fontSize: '14px' }}>➕ Add New Product</h6>
@@ -127,15 +110,11 @@ function Products() {
           <p style={{ margin: 0, color: '#1D4ED8', fontSize: '13.5px', fontWeight: 500 }}>Log in as Administrator to add or modify products.</p>
         </div>
       )}
-
-      {/* Product Table */}
       <div style={cardStyle}>
         <div style={{ position: 'relative', marginBottom: '18px' }}>
           <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', fontSize: '16px', pointerEvents: 'none' }}>🔍</span>
-          <input className="form-control" placeholder="Search by name or barcode..." value={search} onChange={e => setSearch(e.target.value)}
-            style={{ ...inputStyle, paddingLeft: '44px' }} />
+          <input className="form-control" placeholder="Search by name or barcode..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...inputStyle, paddingLeft: '44px' }} />
         </div>
-
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13.5px' }}>
             <thead>
@@ -200,8 +179,6 @@ function Products() {
           )}
         </div>
       </div>
-
-      {/* ── US1: Product Change Log ──────────────────────────────────────── */}
       <div style={cardStyle}>
         <h6 style={{ fontWeight: 700, color: '#374151', marginBottom: '16px', fontSize: '14px' }}>📝 Product Change Log</h6>
         {productLog.length === 0 ? (
@@ -217,9 +194,7 @@ function Products() {
                   <span style={{ fontWeight: 700, color: '#4F46E5' }}>{entry.userId}</span>
                   <span style={{ color: '#64748B', marginLeft: '6px' }}>{entry.action}</span>
                 </div>
-                <span style={{ color: '#94A3B8', fontSize: '11.5px', whiteSpace: 'nowrap', marginLeft: '12px' }}>
-                  {entry.timestamp}
-                </span>
+                <span style={{ color: '#94A3B8', fontSize: '11.5px', whiteSpace: 'nowrap', marginLeft: '12px' }}>{entry.timestamp}</span>
               </div>
             ))}
           </div>
