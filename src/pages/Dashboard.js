@@ -2,36 +2,39 @@ import React, { useContext } from 'react';
 import { AuthContext } from '../App';
 
 function Dashboard() {
-    const { user, transactions, products, auditLog } = useContext(AuthContext);
+    const { user, products, auditLog } = useContext(AuthContext);
 
     const hour = new Date().getHours();
     const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
 
-    // Compute real stats from context
+    // 1. Setup Date and Filter Audit Logs
     const todayStr = new Date().toLocaleDateString();
-    const todaySales = transactions.filter(t =>
-        t.status === 'COMPLETED' && new Date(t.rawDate).toLocaleDateString() === todayStr
-    );
-    const salesTotal = todaySales.reduce((s, t) => s + t.total, 0);
-    const itemsSold = todaySales.reduce((s, t) => s + t.items.reduce((a, i) => a + i.qty, 0), 0);
 
+    const todaySalesLogs = auditLog.filter(log =>
+        log.type === 'Completed Sale' &&
+        new Date(log.timestamp).toLocaleDateString() === todayStr
+    );
+
+    const salesTotal = todaySalesLogs.reduce((s, log) => s + (log.total || 0), 0);
+    const itemsSold = todaySalesLogs.reduce((s, log) => s + (log.itemQty || 0), 0);
+
+    // 2. Define Inventory Logic (Fixes the undefined errors)
     const lowStock = products.filter(p => p.active && p.stock > 0 && p.stock <= 5);
     const outOfStock = products.filter(p => p.active && p.stock === 0);
-    const inactiveProducts = products.filter(p => !p.active);
 
-    // Role-specific stats
+    // 3. Define Role-specific Card Logic
     let cards = [];
 
     if (user?.role === 'Cashier') {
         cards = [
             { label: 'Sales Today', value: `₱${salesTotal.toLocaleString()}`, icon: '💰', light: '#EEF2FF' },
-            { label: 'Transactions', value: todaySales.length.toString(), icon: '🧾', light: '#ECFDF5' },
+            { label: 'Transactions', value: todaySalesLogs.length.toString(), icon: '🧾', light: '#ECFDF5' },
             { label: 'Items Sold', value: itemsSold.toString(), icon: '📦', light: '#FFFBEB' },
         ];
     } else if (user?.role === 'Supervisor') {
         const pendingVoids = auditLog.filter(l => l.type === 'Post-Void Request' && l.status === 'Pending Approval');
         const approvedVoids = auditLog.filter(l => l.type === 'Post-Void Request' && l.status === 'Approved');
-        const pendingTotal = pendingVoids.reduce((s, l) => s + l.total, 0);
+        const pendingTotal = pendingVoids.reduce((s, l) => s + (l.total || 0), 0);
 
         cards = [
             { label: 'Pending Approvals', value: pendingVoids.length.toString(), icon: '⏳', light: '#FFFBEB' },
