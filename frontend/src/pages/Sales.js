@@ -1,12 +1,25 @@
 import React, { useState, useContext, useRef, useCallback, useEffect } from 'react';
 import { AuthContext } from '../App';
 import ReceiptDisplay from '../components/ReceiptDisplay';
+import api from '../services/api'; // Fixed path
 
 let receiptCounter = 1000;
 const genReceiptId = () => `${++receiptCounter}`;
 
 export default function Sales() {
-  const { user, products, setProducts, transactions, setTransactions, setLastReceipt, voidLog, setVoidLog, cancelLog, setCancelLog, setAuditLog } = useContext(AuthContext);
+  const { 
+    user, 
+    products, 
+    setProducts, 
+    // transactions, 
+    setTransactions, 
+    setLastReceipt, 
+    // voidLog, 
+    setVoidLog, 
+    // cancelLog, 
+    setCancelLog, 
+    setAuditLog 
+  } = useContext(AuthContext);
 
   const [cart, setCart] = useState([]);
   const [barcode, setBarcode] = useState('');
@@ -22,6 +35,10 @@ export default function Sales() {
   const [voidItemId, setVoidItemId] = useState(null);
   const [activeCategory, setActiveCategory] = useState('All');
   const barcodeRef = useRef();
+
+  useEffect(() => {
+    if (barcodeRef.current) barcodeRef.current.focus();
+  }, []);
 
   const activeProducts = products.filter(p => p.active && p.stock > 0);
   const categories = ['All', ...new Set(products.filter(p => p.active).map(p => p.category || 'General'))];
@@ -108,12 +125,51 @@ export default function Sales() {
     setVoidItemId(null);
   };
 
-  const handleCheckout = () => {
-    setError('');
-    if (cart.length === 0) { setError('Cart is empty.'); return; }
-    if (paymentMethod === 'Cash' && change < 0) { setError('Insufficient cash received.'); return; }
+  const handleCheckout = async () => {
+  setError('');
+  
+  // 1. Validation Checks
+  if (cart.length === 0) { 
+    setError('Cart is empty.'); 
+    return; 
+  }
+  if (paymentMethod === 'Cash' && change < 0) { 
+    setError('Insufficient cash received.'); 
+    return; 
+  }
 
-    const receiptId = genReceiptId();
+  // 2. Prepare the data object
+  // Inside Sales.js -> handleCheckout
+  const saleData = {
+    // 1. Change 'cashier_id' to 'user_id'
+    user_id: user.id, 
+    
+    subtotal: subtotal,
+    discount_percentage: discount,
+    discount_amount: discountAmount,
+    
+    // 2. Change 'total_amount' to 'total'
+    total: total, 
+    
+    // 3. Change 'payment_method' to 'paymentMethod'
+    paymentMethod: paymentMethod, 
+    
+    cash_received: paymentMethod === 'Cash' ? parseFloat(cashReceived) : total,
+    cash_change: paymentMethod === 'Cash' ? change : 0,
+    
+    items: cart.map(i => ({
+      product_id: i.id,
+      quantity: i.qty,
+      price: i.price,
+      total: i.price * i.qty
+    }))
+  };
+
+  try {
+    // 3. Send to API
+    const savedSale = await api.createSale(saleData); 
+    const receiptId = savedSale.id || genReceiptId();
+
     const tx = {
       id: receiptId,
       timestamp: new Date().toISOString(),
@@ -129,7 +185,7 @@ export default function Sales() {
       change: paymentMethod === 'Cash' ? change : 0,
     };
 
-    // Deduct stock
+    // 4. Update Local State (Stock, Transactions, Logs)
     setProducts(prev => prev.map(p => {
       const item = cart.find(i => i.id === p.id);
       return item ? { ...p, stock: p.stock - item.qty } : p;
@@ -152,12 +208,19 @@ export default function Sales() {
       timestamp: new Date().toISOString(),
     }]);
 
+    // 5. Cleanup
     setCart([]);
     setDiscount(0);
     setCashReceived('');
-    setSuccess(`Sale completed! Receipt #${receiptId}`);
+    setSuccess(`Sale completed and recorded! Receipt #${receiptId}`);
     setShowReceipt(true);
     setTimeout(() => setSuccess(''), 3000);
+
+  } catch (err) {
+    console.error("Database Error:", err);
+    // This will now show the actual error message from your api.js
+    setError(`Server Error: ${err.message || "Failed to record sale"}`);
+  }
   };
 
   const handleCancel = () => {
@@ -196,9 +259,7 @@ export default function Sales() {
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 20, height: 'calc(100vh - 48px)', maxWidth: 1300 }}>
-      {/* Left: Product panel */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16, overflow: 'hidden' }}>
-        {/* Header */}
         <div className="animate-fadeInUp" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <h1 style={{ fontSize: 22, fontWeight: 800 }}>Point of Sale</h1>
@@ -209,7 +270,6 @@ export default function Sales() {
           </div>
         </div>
 
-        {/* Search & Barcode */}
         <div className="animate-fadeInUp delay-1" style={{ display: 'flex', gap: 10 }}>
           <div style={{ position: 'relative', flex: 1 }}>
             <div style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
@@ -237,7 +297,6 @@ export default function Sales() {
           </div>
         </div>
 
-        {/* Categories */}
         <div className="animate-fadeInUp delay-2" style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 }}>
           {categories.map(cat => (
             <button
@@ -259,7 +318,6 @@ export default function Sales() {
           ))}
         </div>
 
-        {/* Product grid */}
         <div className="animate-fadeInUp delay-3" style={{ flex: 1, overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10, alignContent: 'start' }}>
           {filteredProducts.length === 0 && (
             <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)', fontSize: 13 }}>
@@ -314,7 +372,6 @@ export default function Sales() {
           ))}
         </div>
 
-        {/* Alerts */}
         {error && (
           <div style={{ padding: '8px 12px', background: 'rgba(255,77,143,0.1)', border: '1px solid rgba(255,77,143,0.2)', borderRadius: 8, color: 'var(--accent-pink)', fontSize: 12, animation: 'fadeIn 0.2s' }}>
             ⚠️ {error}
@@ -327,9 +384,7 @@ export default function Sales() {
         )}
       </div>
 
-      {/* Right: Cart & Checkout */}
       <div style={{ display: 'flex', flexDirection: 'column', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-xl)', overflow: 'hidden' }}>
-        {/* Cart header */}
         <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -350,7 +405,6 @@ export default function Sales() {
           )}
         </div>
 
-        {/* Cart items */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
           {cart.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)' }}>
@@ -388,7 +442,6 @@ export default function Sales() {
           )}
         </div>
 
-        {/* Discount */}
         <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
             <label style={{ fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Discount %</label>
@@ -409,7 +462,6 @@ export default function Sales() {
             </div>
           </div>
 
-          {/* Totals */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--text-secondary)' }}>
               <span>Subtotal</span><span>{fmt(subtotal)}</span>
@@ -426,7 +478,6 @@ export default function Sales() {
           </div>
         </div>
 
-        {/* Payment */}
         <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
             {['Cash', 'GCash', 'Card'].map(m => (
@@ -480,7 +531,6 @@ export default function Sales() {
         </div>
       </div>
 
-      {/* Receipt Modal */}
       {showReceipt && lastTx && (
         <div className="modal-overlay" onClick={() => setShowReceipt(false)}>
           <div onClick={e => e.stopPropagation()}>
@@ -489,7 +539,6 @@ export default function Sales() {
         </div>
       )}
 
-      {/* Cancel confirm */}
       {showCancelConfirm && (
         <div className="modal-overlay">
           <div className="modal-content" style={{ maxWidth: 360, textAlign: 'center' }}>
@@ -504,7 +553,6 @@ export default function Sales() {
         </div>
       )}
 
-      {/* Void item confirm */}
       {voidItemId && (
         <div className="modal-overlay">
           <div className="modal-content" style={{ maxWidth: 360, textAlign: 'center' }}>

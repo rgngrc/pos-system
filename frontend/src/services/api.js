@@ -1,4 +1,5 @@
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+// Switch from localhost to the explicit IP
+const API_BASE_URL = 'http://127.0.0.1:8000/api';
 
 const api = {
   // Auth endpoints
@@ -109,7 +110,10 @@ const api = {
   createSale: async (sale) => {
     const response = await fetch(`${API_BASE_URL}/sales`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Accept': 'application/json', // <--- THIS TELLS LARAVEL NOT TO REDIRECT
+      },
       credentials: 'include',
       body: JSON.stringify(sale),
     });

@@ -7,14 +7,7 @@ use App\Http\Controllers\ProductController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\SalesController;
 
-// Handle CORS preflight requests
-Route::options('/{any}', function () {
-    return response()
-        ->header('Access-Control-Allow-Origin', '*')
-        ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-        ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-        ->header('Access-Control-Max-Age', '3600');
-})->where('any', '.*');
+// --- REMOVED THE OPTIONS ROUTE FROM HERE ---
 
 // Authentication routes
 Route::post('/login', [AuthController::class, 'login']);
