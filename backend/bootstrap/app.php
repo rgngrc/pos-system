@@ -12,9 +12,23 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
-    ->withMiddleware(function (Middleware $middleware): void {
+    ->withMiddleware(function (Middleware $middleware) {
+        // Keeps the connection stateful so cookies work
+
+        // Maintains your custom CORS logic
         $middleware->prepend(CorsMiddleware::class);
+
+        // FIX: Exempts your auth and sales routes from CSRF protection
+        // This resolves the 419 error that stops logins and sales records
+        $middleware->validateCsrfTokens(except: [
+            'api/login',
+            'api/logout',
+            'api/sales',
+            'api/sales/*', // Covers specific sale IDs if needed
+            'api/void-requests',
+            'api/void-requests/*',
+        ]);
     })
-    ->withExceptions(function (Exceptions $exceptions): void {
+    ->withExceptions(function (Exceptions $exceptions) {
         //
     })->create();

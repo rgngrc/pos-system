@@ -1,5 +1,6 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useEffect } from 'react';
 import { AuthContext } from '../App';
+import api from '../services/api';
 
 const ROLES = ['Cashier', 'Supervisor', 'Administrator'];
 const roleColors = {
@@ -16,6 +17,20 @@ export default function Users() {
   const [editUser, setEditUser] = useState(null);
   const [form, setForm] = useState({ name: '', username: '', password: '', role: 'Cashier', active: true });
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  // Load users from backend on mount
+  useEffect(() => {
+    const loadUsers = async () => {
+      try {
+        const data = await api.getUsers();
+        setUsers(data);
+      } catch (err) {
+        console.error('Failed to load users:', err);
+      }
+    };
+    loadUsers();
+  }, [setUsers]);
 
   const filtered = users.filter(u => {
     const matchSearch = !search || u.name.toLowerCase().includes(search.toLowerCase()) || u.username.toLowerCase().includes(search.toLowerCase());
@@ -32,12 +47,12 @@ export default function Users() {
 
   const openEdit = (u) => {
     setEditUser(u);
-    setForm({ name: u.name, username: u.username, password: u.password, role: u.role, active: u.active });
+    setForm({ name: u.name, username: u.username, password: '', role: u.role, active: u.active });
     setError('');
     setShowModal(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setError('');
     if (!form.name.trim() || !form.username.trim() || !form.password.trim()) {
       setError('All fields are required.'); return;
@@ -47,34 +62,47 @@ export default function Users() {
     const dupUsername = users.find(u => u.username === form.username.trim() && u.id !== editUser?.id);
     if (dupUsername) { setError('Username already exists.'); return; }
 
-    if (editUser) {
-      setUsers(prev => prev.map(u => u.id === editUser.id ? { ...u, ...form } : u));
-      setAuditLog(prev => [...prev, {
-        id: Date.now(), type: 'User Edit', status: 'Completed',
-        actor: currentUser.username, actorName: currentUser.name,
-        itemName: form.username, reason: 'User updated', timestamp: new Date().toISOString(),
-      }]);
-    } else {
-      const newId = Math.max(...users.map(u => u.id), 0) + 1;
-      setUsers(prev => [...prev, { id: newId, ...form }]);
-      setAuditLog(prev => [...prev, {
-        id: Date.now(), type: 'User Add', status: 'Completed',
-        actor: currentUser.username, actorName: currentUser.name,
-        itemName: form.username, reason: `User added as ${form.role}`, timestamp: new Date().toISOString(),
-      }]);
+    setLoading(true);
+    try {
+      if (editUser) {
+        await api.updateUser(editUser.id, form);
+        setUsers(prev => prev.map(u => u.id === editUser.id ? { ...u, ...form } : u));
+        setAuditLog(prev => [...prev, {
+          id: Date.now(), type: 'User Edit', status: 'Completed',
+          actor: currentUser.username, actorName: currentUser.name,
+          itemName: form.username, reason: 'User updated', timestamp: new Date().toISOString(),
+        }]);
+      } else {
+        const newUser = await api.createUser(form);
+        setUsers(prev => [...prev, newUser]);
+        setAuditLog(prev => [...prev, {
+          id: Date.now(), type: 'User Add', status: 'Completed',
+          actor: currentUser.username, actorName: currentUser.name,
+          itemName: form.username, reason: `User added as ${form.role}`, timestamp: new Date().toISOString(),
+        }]);
+      }
+      setShowModal(false);
+    } catch (err) {
+      setError(err.message || 'Failed to save user');
+    } finally {
+      setLoading(false);
     }
-    setShowModal(false);
   };
 
-  const toggleActive = (u) => {
+  const toggleActive = async (u) => {
     if (u.id === currentUser.id) return;
-    setUsers(prev => prev.map(us => us.id === u.id ? { ...us, active: !us.active } : us));
-    setAuditLog(prev => [...prev, {
-      id: Date.now(), type: u.active ? 'User Deactivate' : 'User Activate',
-      status: 'Completed', actor: currentUser.username, actorName: currentUser.name,
-      itemName: u.username, reason: u.active ? 'User deactivated' : 'User reactivated',
-      timestamp: new Date().toISOString(),
-    }]);
+    try {
+      await api.updateUser(u.id, { ...u, active: !u.active });
+      setUsers(prev => prev.map(us => us.id === u.id ? { ...us, active: !us.active } : us));
+      setAuditLog(prev => [...prev, {
+        id: Date.now(), type: u.active ? 'User Deactivate' : 'User Activate',
+        status: 'Completed', actor: currentUser.username, actorName: currentUser.name,
+        itemName: u.username, reason: u.active ? 'User deactivated' : 'User reactivated',
+        timestamp: new Date().toISOString(),
+      }]);
+    } catch (err) {
+      console.error('Failed to toggle user:', err);
+    }
   };
 
   return (
@@ -86,7 +114,7 @@ export default function Users() {
         </div>
         <button onClick={openAdd} className="btn-pos-primary">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
           </svg>
           Add User
         </button>
@@ -116,7 +144,7 @@ export default function Users() {
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
             <div style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
             </div>
             <input className="pos-input" style={{ paddingLeft: 34 }} placeholder="Search users..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
@@ -210,7 +238,7 @@ export default function Users() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
               <h3 style={{ fontSize: 16 }}>{editUser ? 'Edit User' : 'Add New User'}</h3>
               <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
               </button>
             </div>
 

@@ -4,7 +4,7 @@ import { AuthContext } from '../App';
 function Admin() {
     const { user, users, setUsers, products, setProducts, auditLog, setAuditLog } = useContext(AuthContext);
     const [activeTab, setActiveTab] = useState('users');
-    
+
     // Forms State
     const [newUser, setNewUser] = useState({ username: '', password: '', name: '', role: 'Cashier', active: true });
     const [newProduct, setNewProduct] = useState({ name: '', barcode: '', price: 0, stock: 0, active: true });
@@ -75,10 +75,10 @@ function Admin() {
                     <div className="pos-card" style={{ marginBottom: 20 }}>
                         <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>➕ Add New User</h3>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
-                            <input className="pos-input" placeholder="Username" value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} />
-                            <input className="pos-input" type="password" placeholder="Password" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
-                            <input className="pos-input" placeholder="Full Name" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} />
-                            <select className="pos-input" value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})}>
+                            <input className="pos-input" placeholder="Username" value={newUser.username} onChange={e => setNewUser({ ...newUser, username: e.target.value })} />
+                            <input className="pos-input" type="password" placeholder="Password" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} />
+                            <input className="pos-input" placeholder="Full Name" value={newUser.name} onChange={e => setNewUser({ ...newUser, name: e.target.value })} />
+                            <select className="pos-input" value={newUser.role} onChange={e => setNewUser({ ...newUser, role: e.target.value })}>
                                 <option value="Cashier">Cashier</option>
                                 <option value="Supervisor">Supervisor</option>
                                 <option value="Administrator">Administrator</option>
@@ -120,10 +120,10 @@ function Admin() {
                     <div className="pos-card" style={{ marginBottom: 20 }}>
                         <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>➕ Add New Product</h3>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
-                            <input className="pos-input" placeholder="Product Name" value={newProduct.name} onChange={e => setNewProduct({...newProduct, name: e.target.value})} />
-                            <input className="pos-input" placeholder="Barcode" value={newProduct.barcode} onChange={e => setNewProduct({...newProduct, barcode: e.target.value})} />
-                            <input className="pos-input" type="number" placeholder="Price" value={newProduct.price} onChange={e => setNewProduct({...newProduct, price: parseFloat(e.target.value)})} />
-                            <input className="pos-input" type="number" placeholder="Stock" value={newProduct.stock} onChange={e => setNewProduct({...newProduct, stock: parseInt(e.target.value)})} />
+                            <input className="pos-input" placeholder="Product Name" value={newProduct.name} onChange={e => setNewProduct({ ...newProduct, name: e.target.value })} />
+                            <input className="pos-input" placeholder="Barcode" value={newProduct.barcode} onChange={e => setNewProduct({ ...newProduct, barcode: e.target.value })} />
+                            <input className="pos-input" type="number" placeholder="Price" value={newProduct.price} onChange={e => setNewProduct({ ...newProduct, price: parseFloat(e.target.value) })} />
+                            <input className="pos-input" type="number" placeholder="Stock" value={newProduct.stock} onChange={e => setNewProduct({ ...newProduct, stock: parseInt(e.target.value) })} />
                             <button className="btn-pos-primary" onClick={addProduct}>Add Product</button>
                         </div>
                     </div>
@@ -168,7 +168,7 @@ function Admin() {
                             </tr>
                         </thead>
                         <tbody>
-                            {loginLogs.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 20).map(log => (
+                            {loginLogs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 20).map(log => (
                                 <tr key={log.id}>
                                     <td style={{ fontWeight: 600 }}>{log.actorName} <span style={{ opacity: 0.5, fontWeight: 400 }}>({log.actor})</span></td>
                                     <td style={{ fontSize: '12px' }}>{new Date(log.timestamp).toLocaleString()}</td>

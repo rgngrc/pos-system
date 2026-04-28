@@ -15,35 +15,37 @@ class CorsMiddleware
             'http://localhost:8000',
             'http://127.0.0.1:3000',
             'http://127.0.0.1:5173',
+            'http://127.0.0.1:8000',
         ];
 
         $origin = $request->header('Origin');
         
+        // Default headers
+        $responseHeaders = [
+            'Access-Control-Allow-Methods' => 'GET, POST, PUT, DELETE, OPTIONS, HEAD',
+            // ADDED: Accept, X-XSRF-TOKEN, and X-Requested-With are vital for Laravel/React
+            'Access-Control-Allow-Headers' => 'Content-Type, Authorization, X-Requested-With, X-XSRF-TOKEN, Accept',
+            'Access-Control-Max-Age' => '86400',
+        ];
+
         if (in_array($origin, $allowedOrigins)) {
-            $responseHeaders = [
-                'Access-Control-Allow-Origin' => $origin,
-                'Access-Control-Allow-Methods' => 'GET, POST, PUT, DELETE, OPTIONS, HEAD',
-                'Access-Control-Allow-Headers' => 'Content-Type, Authorization, X-Requested-With',
-                'Access-Control-Allow-Credentials' => 'true',
-                'Access-Control-Max-Age' => '86400',
-            ];
-        } else {
-            $responseHeaders = [
-                'Access-Control-Allow-Methods' => 'GET, POST, PUT, DELETE, OPTIONS, HEAD',
-                'Access-Control-Allow-Headers' => 'Content-Type, Authorization, X-Requested-With',
-                'Access-Control-Max-Age' => '86400',
-            ];
+            $responseHeaders['Access-Control-Allow-Origin'] = $origin;
+            $responseHeaders['Access-Control-Allow-Credentials'] = 'true';
         }
 
-        // Handle preflight requests
-        if ($request->getMethod() === 'OPTIONS') {
-            return response('', 200)->withHeaders($responseHeaders);
+        // Handle preflight requests immediately
+        if ($request->isMethod('OPTIONS')) {
+            return response('', 204)->withHeaders($responseHeaders);
         }
 
-        // Add CORS headers to all responses
         $response = $next($request);
-        foreach ($responseHeaders as $key => $value) {
-            $response->header($key, $value);
+
+        // If the response is a binary file (like an image or download), 
+        // it might not have the header() method, so we check first.
+        if (method_exists($response, 'header')) {
+            foreach ($responseHeaders as $key => $value) {
+                $response->header($key, $value);
+            }
         }
 
         return $response;
