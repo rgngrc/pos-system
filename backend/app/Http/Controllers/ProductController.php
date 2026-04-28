@@ -29,6 +29,19 @@ class ProductController extends Controller
         return response()->json($product);
     }
 
+    public function searchByBarcode($barcode)
+    {
+        $product = Product::where('barcode', $barcode)
+                          ->where('active', true)
+                          ->first();
+
+        if (!$product) {
+            return response()->json(['message' => 'Product not found'], 404);
+        }
+
+        return response()->json($product, 200);
+    }
+
     /**
      * Store a newly created product in the database.
      */
@@ -42,7 +55,6 @@ class ProductController extends Controller
             'category' => 'required|string',
         ]);
 
-        // This line saves the data to your MySQL 'products' table
         $product = Product::create($validated);
 
         return response()->json($product, 201);

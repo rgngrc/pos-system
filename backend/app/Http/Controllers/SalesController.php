@@ -2,42 +2,44 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Sale;
 use Illuminate\Http\Request;
-use App\Models\Sale; // Ensure your Model is imported
 
 class SalesController extends Controller
 {
-    // This handles displaying the list in your Transactions.js
-    public function index(Request $request)
+    public function index()
     {
-        $query = Sale::query();
-
-        // If a user_id is provided in the URL, filter by it
-        if ($request->has('user_id')) {
-            $query->where('user_id', $request->user_id);
-        }
-
-        // 'with("user")' allows you to get the cashier's name from the users table
-        return response()->json($query->with('user')->latest()->get());
+        // Return all sales with user relationship loaded
+        return Sale::with('user')->orderBy('created_at', 'desc')->get();
     }
 
-    // Your existing store method...
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'items' => 'required|array',
-            'total' => 'required|numeric',
-            'paymentMethod' => 'required|string',
-            'user_id' => 'required|integer',
-            'subtotal' => 'nullable|numeric',
-            'discount_percentage' => 'nullable|numeric',
-            'discount_amount' => 'nullable|numeric',
-            'cash_received' => 'nullable|numeric',
-            'cash_change' => 'nullable|numeric',
+            'user_id'              => 'required|exists:users,id',
+            'subtotal'             => 'required|numeric',
+            'discount_type'        => 'nullable|string',
+            'discount_id_number'   => 'nullable|string',
+            'discount_percentage'  => 'nullable|numeric|min:0|max:100',
+            'discount_amount'      => 'nullable|numeric',
+            'total'                => 'required|numeric',
+            'paymentMethod'        => 'required|string',
+            'cash_received'        => 'nullable|numeric',
+            'cash_change'          => 'nullable|numeric',
+            'items'                => 'required|array',
         ]);
 
         $sale = Sale::create($validated);
+        return $sale->load('user');
+    }
 
-        return response()->json($sale, 201);
+    public function show($id)
+    {
+        return Sale::with('user')->findOrFail($id);
+    }
+
+    public function userSales($userId)
+    {
+        return Sale::where('user_id', $userId)->with('user')->orderBy('created_at', 'desc')->get();
     }
 }

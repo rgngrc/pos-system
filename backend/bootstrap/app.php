@@ -26,6 +26,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'api/logout',
             'api/sales',
             'api/sales/*', // Covers specific sale IDs if needed
+            'api/void-requests',
+            'api/void-requests/*',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

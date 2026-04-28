@@ -2,31 +2,32 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Sale extends Model
 {
+    use HasFactory;
+
     protected $fillable = [
-        'user_id', 
-        'subtotal', 
-        'discount_percentage', 
-        'discount_amount', 
-        'total', 
-        'paymentMethod', 
-        'cash_received', 
-        'cash_change', 
-        'items'
+        'user_id',
+        'subtotal',
+        'discount_type',
+        'discount_id_number',
+        'discount_percentage',
+        'discount_amount',
+        'total',
+        'paymentMethod',
+        'cash_received',
+        'cash_change',
+        'items',
     ];
 
     protected $casts = [
-        'items' => 'array',
+        'items' => 'json',
     ];
 
-    /**
-     * Get the user (cashier) that owns the sale.
-     */
-    public function user(): BelongsTo
+    public function user()
     {
         return $this->belongsTo(User::class);
     }
