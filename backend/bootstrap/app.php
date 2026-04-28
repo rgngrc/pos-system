@@ -14,7 +14,6 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware) {
         // Keeps the connection stateful so cookies work
-        $middleware->statefulApi();
 
         // Maintains your custom CORS logic
         $middleware->prepend(CorsMiddleware::class);
