@@ -1,207 +1,255 @@
 import React, { useState, useContext } from 'react';
 import { AuthContext } from '../App';
 
-function Products() {
-  const { user, products, setProducts, productLog, setProductLog } = useContext(AuthContext);
-  const isAdmin = user?.role === 'Administrator';
-  const [search, setSearch] = useState('');
-  const [form, setForm] = useState({ name: '', barcode: '', price: '', stock: '' });
-  const [error, setError] = useState('');
-  const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState({ name: '', barcode: '', price: '', stock: '' });
+const CATEGORIES = ['Staples', 'Condiments', 'Canned Goods', 'Instant Food', 'Beverages', 'Bakery', 'Snacks', 'Dairy', 'Personal Care', 'Other'];
 
-  const addProductLog = (action) => {
-    setProductLog(prev => [...prev, {
-      id: Date.now(),
-      timestamp: new Date().toLocaleString(),
-      userId: user?.username || 'unknown',
-      action,
+export default function Products() {
+  const { products, setProducts, productLog, setProductLog, auditLog, setAuditLog, user } = useContext(AuthContext);
+
+  const [search, setSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('All');
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [showModal, setShowModal] = useState(false);
+  const [editProduct, setEditProduct] = useState(null);
+  const [form, setForm] = useState({ name: '', barcode: '', price: '', stock: '', category: 'Other', active: true });
+  const [error, setError] = useState('');
+
+  const filtered = products.filter(p => {
+    const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.barcode.includes(search);
+    const matchCat = categoryFilter === 'All' || (p.category || 'Other') === categoryFilter;
+    const matchStatus = statusFilter === 'All' || (statusFilter === 'Active' ? p.active : !p.active);
+    return matchSearch && matchCat && matchStatus;
+  });
+
+  const allCategories = ['All', ...new Set(products.map(p => p.category || 'Other'))];
+  const fmt = n => `₱${parseFloat(n).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
+
+  const openAdd = () => {
+    setEditProduct(null);
+    setForm({ name: '', barcode: '', price: '', stock: '', category: 'Other', active: true });
+    setError('');
+    setShowModal(true);
+  };
+
+  const openEdit = (p) => {
+    setEditProduct(p);
+    setForm({ name: p.name, barcode: p.barcode, price: p.price, stock: p.stock, category: p.category || 'Other', active: p.active });
+    setError('');
+    setShowModal(true);
+  };
+
+  const handleSave = () => {
+    setError('');
+    if (!form.name.trim() || !form.barcode.trim() || form.price === '' || form.stock === '') {
+      setError('All fields are required.'); return;
+    }
+    const price = parseFloat(form.price);
+    const stock = parseInt(form.stock);
+    if (isNaN(price) || price < 0) { setError('Invalid price.'); return; }
+    if (isNaN(stock) || stock < 0) { setError('Invalid stock.'); return; }
+
+    const dupBarcode = products.find(p => p.barcode === form.barcode.trim() && p.id !== editProduct?.id);
+    if (dupBarcode) { setError('Barcode already exists.'); return; }
+
+    if (editProduct) {
+      setProducts(prev => prev.map(p => p.id === editProduct.id ? { ...p, ...form, price, stock } : p));
+      setProductLog(prev => [...prev, {
+        id: Date.now(), action: 'Edit', productId: editProduct.id, productName: form.name,
+        actor: user.username, actorName: user.name, timestamp: new Date().toISOString(),
+        changes: `Price: ${fmt(editProduct.price)} → ${fmt(price)}, Stock: ${editProduct.stock} → ${stock}`,
+      }]);
+      setAuditLog(prev => [...prev, { id: Date.now(), type: 'Product Edit', status: 'Completed', actor: user.username, actorName: user.name, itemName: form.name, reason: 'Product updated', timestamp: new Date().toISOString() }]);
+    } else {
+      const newId = Math.max(...products.map(p => p.id), 0) + 1;
+      setProducts(prev => [...prev, { id: newId, ...form, price, stock }]);
+      setProductLog(prev => [...prev, {
+        id: Date.now(), action: 'Add', productId: newId, productName: form.name,
+        actor: user.username, actorName: user.name, timestamp: new Date().toISOString(),
+        changes: `Added at ${fmt(price)}, stock: ${stock}`,
+      }]);
+      setAuditLog(prev => [...prev, { id: Date.now(), type: 'Product Add', status: 'Completed', actor: user.username, actorName: user.name, itemName: form.name, reason: 'Product added', timestamp: new Date().toISOString() }]);
+    }
+    setShowModal(false);
+  };
+
+  const toggleActive = (p) => {
+    setProducts(prev => prev.map(pr => pr.id === p.id ? { ...pr, active: !pr.active } : pr));
+    setAuditLog(prev => [...prev, {
+      id: Date.now(), type: p.active ? 'Product Deactivate' : 'Product Activate',
+      status: 'Completed', actor: user.username, actorName: user.name,
+      itemName: p.name, reason: p.active ? 'Product deactivated' : 'Product activated',
+      timestamp: new Date().toISOString(),
     }]);
   };
 
-  const filtered = products.filter(p =>
-    p.name.toLowerCase().includes(search.toLowerCase()) || p.barcode.includes(search)
-  );
-
-  const addProduct = () => {
-    if (!isAdmin) { setError('Only administrators can add products.'); return; }
-    if (!form.name || !form.barcode || !form.price || !form.stock) { setError('All fields are required.'); return; }
-    if (products.some(p => p.barcode === form.barcode)) { setError('Barcode must be unique.'); return; }
-    const newProduct = { id: Date.now(), ...form, price: +form.price, stock: +form.stock, active: true };
-    setProducts([...products, newProduct]);
-    addProductLog(`Added product: "${newProduct.name}" (Barcode: ${newProduct.barcode}, Price: ₱${newProduct.price})`);
-    setForm({ name: '', barcode: '', price: '', stock: '' });
-    setError('');
-  };
-
-  const toggleActive = (id) => {
-    if (!isAdmin) { setError('Only administrators can change product status.'); return; }
-    const product = products.find(p => p.id === id);
-    setProducts(products.map(p => p.id === id ? { ...p, active: !p.active } : p));
-    addProductLog(`${product.active ? 'Deactivated' : 'Activated'} product: "${product.name}"`);
-  };
-
-  const startEditing = (product) => {
-    if (!isAdmin) return;
-    setEditingId(product.id);
-    setEditForm({ name: product.name, barcode: product.barcode, price: product.price, stock: product.stock });
-    setError('');
-  };
-
-  const saveEdit = (id) => {
-    if (!isAdmin) return;
-    if (!editForm.name || !editForm.barcode || editForm.price === '' || editForm.stock === '') { setError('All fields are required to update product.'); return; }
-    if (products.some(p => p.barcode === editForm.barcode && p.id !== id)) { setError('Barcode must be unique.'); return; }
-    setProducts(products.map(p =>
-      p.id === id
-        ? { ...p, name: editForm.name, barcode: editForm.barcode, price: +editForm.price, stock: +editForm.stock }
-        : p
-    ));
-    addProductLog(`Updated product ID ${id}: "${editForm.name}" — Price: ₱${editForm.price}, Stock: ${editForm.stock}`);
-    setEditingId(null);
-    setError('');
-  };
-
-  const cancelEdit = () => { setEditingId(null); setError(''); };
-
-  const cardStyle = { background: 'white', borderRadius: '20px', padding: '24px', boxShadow: '0 4px 20px rgba(0,0,0,0.07)', border: '1px solid #F1F5F9', marginBottom: '20px' };
-  const inputStyle = { borderRadius: '10px', border: '2px solid #E2E8F0', padding: '10px 14px', fontSize: '13px', width: '100%', outline: 'none' };
-  const btnBase = { padding: '7px 16px', borderRadius: '9px', border: 'none', fontSize: '12px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s' };
-
   return (
-    <div style={{ fontFamily: "'Segoe UI', sans-serif" }}>
-      <div style={{ marginBottom: '24px' }}>
-        <h3 style={{ fontWeight: 800, color: '#1E293B', margin: 0, fontSize: '22px' }}>📦 Product Management</h3>
-        <p style={{ color: '#94A3B8', fontSize: '13px', margin: '4px 0 0' }}>Manage your store inventory — changes are logged automatically</p>
+    <div style={{ maxWidth: 1100 }}>
+      <div className="animate-fadeInUp" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>Products</h1>
+          <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>{products.length} products · {products.filter(p => p.active).length} active</p>
+        </div>
+        <button onClick={openAdd} className="btn-pos-primary">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Add Product
+        </button>
       </div>
-      {isAdmin ? (
-        <div style={cardStyle}>
-          <h6 style={{ fontWeight: 700, color: '#374151', marginBottom: '16px', fontSize: '14px' }}>➕ Add New Product</h6>
-          <div className="row g-2 align-items-end">
-            <div className="col-md-3">
-              <label style={{ fontSize: '11px', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>Name</label>
-              <input style={inputStyle} className="form-control" placeholder="e.g. Rice 5kg" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+
+      {/* Filters */}
+      <div className="pos-card animate-fadeInUp delay-1" style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
+            <div style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
             </div>
-            <div className="col-md-2">
-              <label style={{ fontSize: '11px', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>Barcode</label>
-              <input style={inputStyle} className="form-control" placeholder="e.g. 1004" value={form.barcode} onChange={e => setForm({ ...form, barcode: e.target.value })} />
-            </div>
-            <div className="col-md-2">
-              <label style={{ fontSize: '11px', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>Price (₱)</label>
-              <input type="number" style={inputStyle} className="form-control" placeholder="0" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} />
-            </div>
-            <div className="col-md-2">
-              <label style={{ fontSize: '11px', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>Stock</label>
-              <input type="number" style={inputStyle} className="form-control" placeholder="0" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} />
-            </div>
-            <div className="col-md-3">
-              <button onClick={addProduct} style={{ width: '100%', padding: '11px', background: 'linear-gradient(135deg, #667eea, #764ba2)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: 700, fontSize: '13px', cursor: 'pointer', boxShadow: '0 4px 14px rgba(102,126,234,0.4)', transition: 'transform 0.15s' }}
-                onMouseEnter={e => e.target.style.transform = 'translateY(-1px)'}
-                onMouseLeave={e => e.target.style.transform = 'translateY(0)'}>
-                + Add Product
-              </button>
-            </div>
+            <input className="pos-input" style={{ paddingLeft: 34 }} placeholder="Search products..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
-          {error && <div style={{ marginTop: '14px', background: '#FEF2F2', border: '1.5px solid #FECACA', borderRadius: '12px', padding: '11px 16px', color: '#DC2626', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>⚠️ {error}</div>}
+          <select className="pos-input" style={{ width: 160 }} value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
+            {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <select className="pos-input" style={{ width: 120 }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+            <option value="All">All Status</option>
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+          </select>
         </div>
-      ) : (
-        <div style={{ ...cardStyle, background: '#EFF6FF', border: '1.5px solid #BFDBFE', display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span style={{ fontSize: '20px' }}>ℹ️</span>
-          <p style={{ margin: 0, color: '#1D4ED8', fontSize: '13.5px', fontWeight: 500 }}>Log in as Administrator to add or modify products.</p>
-        </div>
-      )}
-      <div style={cardStyle}>
-        <div style={{ position: 'relative', marginBottom: '18px' }}>
-          <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', fontSize: '16px', pointerEvents: 'none' }}>🔍</span>
-          <input className="form-control" placeholder="Search by name or barcode..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...inputStyle, paddingLeft: '44px' }} />
-        </div>
+      </div>
+
+      {/* Table */}
+      <div className="pos-card animate-fadeInUp delay-2" style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13.5px' }}>
+          <table className="pos-table">
             <thead>
-              <tr style={{ borderBottom: '2px solid #E2E8F0' }}>
-                {['Name', 'Barcode', 'Price', 'Stock', 'Status', 'Actions'].map(h => (
-                  <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.07em', background: '#F8FAFC' }}>{h}</th>
-                ))}
+              <tr>
+                <th>Product</th>
+                <th>Barcode</th>
+                <th>Category</th>
+                <th>Price</th>
+                <th>Stock</th>
+                <th>Status</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((p, idx) => (
-                <tr key={p.id} style={{ borderBottom: '1px solid #F1F5F9', opacity: p.active ? 1 : 0.55, background: idx % 2 === 0 ? 'white' : '#FAFAFA' }}>
-                  <td style={{ padding: '13px 16px', fontWeight: 600, color: '#1E293B' }}>
-                    {editingId === p.id ? <input style={inputStyle} className="form-control" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} /> : p.name}
+              {filtered.length === 0 && (
+                <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>No products found</td></tr>
+              )}
+              {filtered.map(p => (
+                <tr key={p.id}>
+                  <td>
+                    <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: 13 }}>{p.name}</div>
                   </td>
-                  <td style={{ padding: '13px 16px', color: '#6B7280', fontFamily: 'monospace', fontSize: '13px' }}>
-                    {editingId === p.id ? <input style={inputStyle} className="form-control" value={editForm.barcode} onChange={e => setEditForm({ ...editForm, barcode: e.target.value })} /> : <span style={{ background: '#F1F5F9', borderRadius: '6px', padding: '3px 10px' }}>{p.barcode}</span>}
-                  </td>
-                  <td style={{ padding: '13px 16px', fontWeight: 700, color: '#059669' }}>
-                    {editingId === p.id ? <input type="number" style={inputStyle} className="form-control" value={editForm.price} onChange={e => setEditForm({ ...editForm, price: e.target.value })} /> : `₱${p.price.toLocaleString()}`}
-                  </td>
-                  <td style={{ padding: '13px 16px' }}>
-                    {editingId === p.id
-                      ? <input type="number" style={inputStyle} className="form-control" value={editForm.stock} onChange={e => setEditForm({ ...editForm, stock: e.target.value })} />
-                      : p.stock === 0
-                        ? <span style={{ background: '#FEF2F2', color: '#EF4444', borderRadius: '8px', padding: '4px 12px', fontSize: '12px', fontWeight: 700 }}>Out of stock</span>
-                        : <span style={{ background: '#F0FDF4', color: '#16A34A', borderRadius: '8px', padding: '4px 12px', fontSize: '12px', fontWeight: 700 }}>{p.stock} units</span>}
-                  </td>
-                  <td style={{ padding: '13px 16px' }}>
-                    <span style={{ background: p.active ? '#ECFDF5' : '#F1F5F9', color: p.active ? '#10B981' : '#94A3B8', borderRadius: '8px', padding: '4px 12px', fontSize: '12px', fontWeight: 700 }}>
-                      {p.active ? '● Active' : '○ Inactive'}
+                  <td>
+                    <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--accent-blue)', background: 'var(--accent-blue-dim)', padding: '2px 8px', borderRadius: 4 }}>
+                      {p.barcode}
                     </span>
                   </td>
-                  <td style={{ padding: '13px 16px' }}>
-                    {isAdmin ? (
-                      editingId === p.id ? (
-                        <div style={{ display: 'flex', gap: '6px' }}>
-                          <button onClick={() => saveEdit(p.id)} style={{ ...btnBase, background: '#10B981', color: 'white' }}>✓ Save</button>
-                          <button onClick={cancelEdit} style={{ ...btnBase, background: '#F1F5F9', color: '#64748B', border: '1px solid #E2E8F0' }}>Cancel</button>
-                        </div>
-                      ) : (
-                        <div style={{ display: 'flex', gap: '6px' }}>
-                          <button onClick={() => startEditing(p)} style={{ ...btnBase, background: '#EEF2FF', color: '#4F46E5' }}>✎ Edit</button>
-                          <button onClick={() => toggleActive(p.id)} style={{ ...btnBase, background: p.active ? '#FEF2F2' : '#F0FDF4', color: p.active ? '#EF4444' : '#16A34A' }}>
-                            {p.active ? 'Deactivate' : 'Activate'}
-                          </button>
-                        </div>
-                      )
-                    ) : (
-                      <span style={{ color: '#CBD5E1', fontSize: '12px', fontStyle: 'italic' }}>Read-only</span>
-                    )}
+                  <td><span className="pos-badge badge-muted">{p.category || 'Other'}</span></td>
+                  <td><span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, color: 'var(--text-primary)' }}>{fmt(p.price)}</span></td>
+                  <td>
+                    <span style={{
+                      fontFamily: 'var(--font-display)', fontWeight: 700,
+                      color: p.stock === 0 ? 'var(--accent-pink)' : p.stock <= 5 ? 'var(--accent-amber)' : 'var(--accent-green)',
+                    }}>
+                      {p.stock}
+                    </span>
+                    {p.stock === 0 && <span className="pos-badge badge-pink" style={{ marginLeft: 6, fontSize: 10 }}>Out</span>}
+                    {p.stock > 0 && p.stock <= 5 && <span className="pos-badge badge-amber" style={{ marginLeft: 6, fontSize: 10 }}>Low</span>}
+                  </td>
+                  <td>
+                    {p.active
+                      ? <span className="pos-badge badge-green"><span className="status-dot active" />Active</span>
+                      : <span className="pos-badge badge-muted"><span className="status-dot inactive" />Inactive</span>}
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={() => openEdit(p)} className="btn-pos-secondary" style={{ padding: '4px 10px', fontSize: 11 }}>Edit</button>
+                      <button onClick={() => toggleActive(p)} style={{
+                        padding: '4px 10px', fontSize: 11, borderRadius: 8, border: '1px solid var(--border)',
+                        background: 'transparent', color: p.active ? 'var(--accent-amber)' : 'var(--accent-green)',
+                        cursor: 'pointer',
+                      }}>
+                        {p.active ? 'Deactivate' : 'Activate'}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {filtered.length === 0 && (
-            <div style={{ textAlign: 'center', padding: '48px', color: '#CBD5E1' }}>
-              <div style={{ fontSize: '36px', marginBottom: '8px' }}>🔍</div>
-              <div style={{ fontSize: '14px' }}>No products match your search</div>
-            </div>
-          )}
         </div>
       </div>
-      <div style={cardStyle}>
-        <h6 style={{ fontWeight: 700, color: '#374151', marginBottom: '16px', fontSize: '14px' }}>📝 Product Change Log</h6>
-        {productLog.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '36px', background: '#F8FAFC', borderRadius: '14px', color: '#CBD5E1', fontSize: '14px' }}>
-            <div style={{ fontSize: '32px', marginBottom: '8px' }}>📋</div>
-            No product changes recorded yet.
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {productLog.slice().reverse().map(entry => (
-              <div key={entry.id} style={{ background: '#F8FAFC', borderRadius: '12px', padding: '12px 16px', borderLeft: '3px solid #667eea', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
-                <div>
-                  <span style={{ fontWeight: 700, color: '#4F46E5' }}>{entry.userId}</span>
-                  <span style={{ color: '#64748B', marginLeft: '6px' }}>{entry.action}</span>
+
+      {/* Modal */}
+      {showModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <h3 style={{ fontSize: 16 }}>{editProduct ? 'Edit Product' : 'Add New Product'}</h3>
+              <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {[
+                { label: 'Product Name', key: 'name', placeholder: 'e.g. Rice (5kg)', type: 'text' },
+                { label: 'Barcode', key: 'barcode', placeholder: 'e.g. 1001', type: 'text' },
+                { label: 'Price (₱)', key: 'price', placeholder: '0.00', type: 'number' },
+                { label: 'Stock', key: 'stock', placeholder: '0', type: 'number' },
+              ].map(f => (
+                <div key={f.key}>
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                    {f.label}
+                  </label>
+                  <input type={f.type} placeholder={f.placeholder} className="pos-input"
+                    value={form[f.key]} onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))} />
                 </div>
-                <span style={{ color: '#94A3B8', fontSize: '11.5px', whiteSpace: 'nowrap', marginLeft: '12px' }}>{entry.timestamp}</span>
+              ))}
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Category</label>
+                <select className="pos-input" value={form.category} onChange={e => setForm(prev => ({ ...prev, category: e.target.value }))}>
+                  {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
               </div>
-            ))}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <label style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Active</label>
+                <button
+                  onClick={() => setForm(prev => ({ ...prev, active: !prev.active }))}
+                  style={{
+                    width: 44, height: 24, borderRadius: 12,
+                    background: form.active ? 'var(--accent-green)' : 'var(--bg-elevated)',
+                    border: 'none', cursor: 'pointer', position: 'relative', transition: 'background 0.2s',
+                  }}
+                >
+                  <div style={{
+                    position: 'absolute', top: 3, left: form.active ? 23 : 3,
+                    width: 18, height: 18, borderRadius: '50%',
+                    background: 'white', transition: 'left 0.2s',
+                  }} />
+                </button>
+              </div>
+            </div>
+
+            {error && (
+              <div style={{ padding: '8px 12px', background: 'rgba(255,77,143,0.1)', border: '1px solid rgba(255,77,143,0.2)', borderRadius: 8, color: 'var(--accent-pink)', fontSize: 12, marginTop: 12 }}>
+                {error}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+              <button onClick={() => setShowModal(false)} className="btn-pos-secondary" style={{ flex: 1, justifyContent: 'center' }}>Cancel</button>
+              <button onClick={handleSave} className="btn-pos-primary" style={{ flex: 1, justifyContent: 'center' }}>
+                {editProduct ? 'Save Changes' : 'Add Product'}
+              </button>
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
-
-export default Products;
