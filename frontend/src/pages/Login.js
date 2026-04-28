@@ -1,5 +1,6 @@
 import React, { useState, useContext, useRef } from 'react';
 import { AuthContext } from '../App';
+import api from '../services/api';
 
 export default function Login() {
   const { login, users, setAuditLog, auditLog, loginAttempts, setLoginAttempts } = useContext(AuthContext);
@@ -13,7 +14,7 @@ export default function Login() {
   const LOCKOUT_THRESHOLD = 5;
   const LOCKOUT_MS = 5 * 60 * 1000;
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
@@ -28,8 +29,10 @@ export default function Login() {
       return;
     }
 
-    setTimeout(() => {
-      const foundUser = users.find(u => u.username === username && u.password === password);
+    try {
+      // Try to authenticate with backend API
+      const response = await api.login(username, password);
+      const foundUser = response.user;
 
       if (!foundUser) {
         const newCount = attempts.count + 1;
@@ -78,9 +81,27 @@ export default function Login() {
         }]);
       }
 
+      // Store token if provided
+      if (response.token) {
+        localStorage.setItem('authToken', response.token);
+      }
+
       login(foundUser);
       setLoading(false);
-    }, 600);
+    } catch (err) {
+      console.error('Login error:', err);
+      const newCount = attempts.count + 1;
+      const newAttempts = { ...loginAttempts };
+      if (newCount >= LOCKOUT_THRESHOLD) {
+        newAttempts[username] = { count: newCount, lockedUntil: now + LOCKOUT_MS };
+        setError(`Too many failed attempts. Locked for 5 minutes.`);
+      } else {
+        newAttempts[username] = { count: newCount, lockedUntil: 0 };
+        setError(`Invalid credentials. ${LOCKOUT_THRESHOLD - newCount} attempt(s) left.`);
+      }
+      setLoginAttempts(newAttempts);
+      setLoading(false);
+    }
   };
 
   const demoUsers = [

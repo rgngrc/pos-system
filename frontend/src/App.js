@@ -9,6 +9,7 @@ import Transactions from './pages/Transactions';
 import Admin from './pages/Admin';
 import Sidebar from './components/Sidebar';
 import ProtectedRoute from './components/ProtectedRoute';
+import api from './services/api';
 import './index.css';
 
 export const AuthContext = React.createContext(null);
@@ -44,6 +45,23 @@ function App() {
   const [cancelLog, setCancelLog] = useState([]);
   const [postVoidRequests, setPostVoidRequests] = useState([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Load initial data from backend
+  useEffect(() => {
+    const loadInitialData = async () => {
+      try {
+        const [usersData, productsData] = await Promise.all([
+          api.getUsers().catch(() => INITIAL_USERS),
+          api.getProducts().catch(() => INITIAL_PRODUCTS),
+        ]);
+        setUsers(usersData);
+        setProducts(productsData);
+      } catch (error) {
+        console.error('Error loading initial data:', error);
+      }
+    };
+    loadInitialData();
+  }, []);
 
   const login = (userData) => setUser(userData);
   const logout = useCallback(() => {
