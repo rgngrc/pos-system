@@ -1,231 +1,197 @@
-import React, { useContext, useState } from 'react';
+import React, { useState, useContext, useMemo } from 'react';
 import { AuthContext } from '../App';
+import ReceiptDisplay from '../components/ReceiptDisplay';
 
-const TYPE_COLORS = {
-    'Completed Sale': { bg: '#ECFDF5', color: '#059669', dot: '#10B981' },
-    'Void Item': { bg: '#FEF3C7', color: '#D97706', dot: '#F59E0B' },
-    'Canceled Sale': { bg: '#FEF2F2', color: '#DC2626', dot: '#EF4444' },
-    'Post-Void Request': { bg: '#EEF2FF', color: '#4F46E5', dot: '#6366F1' },
-    'Receipt Reprint': { bg: '#F0F9FF', color: '#0284C7', dot: '#0EA5E9' },
-};
+export default function Transactions() {
+  const { user, transactions, setTransactions, lastReceipt, setLastReceipt, voidLog, postVoidRequests, setPostVoidRequests, setAuditLog } = useContext(AuthContext);
 
-const STATUS_COLORS = {
-    Completed: { bg: '#ECFDF5', color: '#059669' },
-    Pending: { bg: '#FFFBEB', color: '#D97706' },
-    Approved: { bg: '#EEF2FF', color: '#4F46E5' },
-    Rejected: { bg: '#FEF2F2', color: '#DC2626' },
-    Logged: { bg: '#F1F5F9', color: '#64748B' },
-};
+  const [search, setSearch] = useState('');
+  const [dateFilter, setDateFilter] = useState('');
+  const [viewTx, setViewTx] = useState(null);
+  const [postVoidTx, setPostVoidTx] = useState(null);
+  const [postVoidReason, setPostVoidReason] = useState('');
 
-const TRANSACTIONAL_TYPES = ['Completed Sale', 'Void Item', 'Canceled Sale', 'Post-Void Request', 'Receipt Reprint'];
+  const fmt = n => `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
 
-function Transactions() {
-    const { user, auditLog, setAuditLog, products, setProducts } = useContext(AuthContext);
-    const isSupervisor = user?.role === 'Supervisor';
+  const filtered = useMemo(() => {
+    return transactions.filter(tx => {
+      const matchSearch = !search || tx.id.toString().includes(search) || tx.cashierName?.toLowerCase().includes(search.toLowerCase());
+      const matchDate = !dateFilter || new Date(tx.timestamp).toDateString() === new Date(dateFilter).toDateString();
+      return matchSearch && matchDate;
+    }).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  }, [transactions, search, dateFilter]);
 
-    const [filterType, setFilterType] = useState('All');
-    const [filterStatus, setFilterStatus] = useState('All');
-    const [filterDate, setFilterDate] = useState('');
-    const [expandedId, setExpandedId] = useState(null);
+  const totalRevenue = filtered.reduce((s, t) => s + t.total, 0);
 
-    // ─── Supervisor Actions ───────────────────────────────────────────────────
-
-    const approvePostVoid = (entry) => {
-        if (!window.confirm(`Approve post-void for "${entry.itemName}"?\nThis will restore inventory.`)) return;
-
-        if (entry.originalReceipt?.items) {
-            setProducts(prev => prev.map(p => {
-                const item = entry.originalReceipt.items.find(i => i.id === p.id);
-                return item ? { ...p, stock: p.stock + item.qty } : p;
-            }));
-        }
-
-        setAuditLog(prev => prev.map(log =>
-            log.id === entry.id
-                ? { ...log, status: 'Approved', reviewedBy: user?.username, reviewedAt: new Date().toISOString() }
-                : log
-        ));
+  const handlePostVoid = () => {
+    if (!postVoidReason.trim()) return;
+    const req = {
+      id: Date.now(),
+      timestamp: new Date().toISOString(),
+      requestedBy: user.username,
+      requestedByName: user.name,
+      transactionId: postVoidTx.id,
+      total: postVoidTx.total,
+      reason: postVoidReason,
+      status: 'Pending',
     };
+    setPostVoidRequests(prev => [...prev, req]);
+    setAuditLog(prev => [...prev, {
+      id: Date.now(),
+      type: 'PostVoid Request',
+      status: 'Pending',
+      actor: user.username,
+      actorName: user.name,
+      itemName: `Receipt #${postVoidTx.id}`,
+      total: postVoidTx.total,
+      reason: postVoidReason,
+      timestamp: new Date().toISOString(),
+    }]);
+    setPostVoidTx(null);
+    setPostVoidReason('');
+  };
 
-    const rejectPostVoid = (entry) => {
-        const rejectReason = prompt('Reason for rejection (optional):');
-        setAuditLog(prev => prev.map(log =>
-            log.id === entry.id
-                ? { ...log, status: 'Rejected', reviewedBy: user?.username, reviewedAt: new Date().toISOString(), rejectReason: rejectReason?.trim() || null }
-                : log
-        ));
-    };
+  return (
+    <div style={{ maxWidth: 1100 }}>
+      <div className="animate-fadeInUp" style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>Transactions</h1>
+        <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>View and manage completed sales</p>
+      </div>
 
-    // ─── Filtering & Sorting ──────────────────────────────────────────────────
+      {/* Summary */}
+      <div className="animate-fadeInUp delay-1" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 24 }}>
+        {[
+          { label: 'Total Transactions', value: filtered.length, color: 'blue' },
+          { label: 'Total Revenue', value: fmt(totalRevenue), color: 'green' },
+          { label: 'Avg. Transaction', value: fmt(filtered.length ? totalRevenue / filtered.length : 0), color: 'amber' },
+        ].map(s => (
+          <div key={s.label} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '16px 20px' }}>
+            <div style={{ fontSize: 22, fontWeight: 800, fontFamily: 'var(--font-display)', color: `var(--accent-${s.color})`, marginBottom: 4 }}>{s.value}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
 
-    const allTypes = ['All', ...TRANSACTIONAL_TYPES.filter(type => auditLog.some(l => l.type === type))];
-
-    const filtered = auditLog
-        .slice()
-        .reverse()
-        .filter(log => {
-            if (!TRANSACTIONAL_TYPES.includes(log.type)) return false;
-            if (filterType !== 'All' && log.type !== filterType) return false;
-            if (filterStatus !== 'All' && log.status !== filterStatus) return false;
-            if (filterDate) {
-                const logDate = new Date(log.timestamp).toLocaleDateString();
-                const selDate = new Date(filterDate).toLocaleDateString();
-                if (logDate !== selDate) return false;
-            }
-            return true;
-        });
-
-    // ONLY Post-Void Requests go into the Action Queue
-    const pendingRequests = auditLog.filter(l => l.type === 'Post-Void Request' && l.status === 'Pending');
-
-    // Stats
-    const transactionLogs = auditLog.filter(l => TRANSACTIONAL_TYPES.includes(l.type));
-    const completedSales = auditLog.filter(l => l.type === 'Completed Sale');
-    const totalRevenue = completedSales.reduce((sum, l) => sum + (l.total || 0), 0);
-    const voidCount = auditLog.filter(l => l.type === 'Void Item').length;
-    const cancelCount = auditLog.filter(l => l.type === 'Canceled Sale').length;
-
-    // ─── Styles ───────────────────────────────────────────────────────────────
-
-    const cardStyle = {
-        background: 'white', borderRadius: '18px', padding: '20px',
-        boxShadow: '0 4px 20px rgba(0,0,0,0.06)', border: '1px solid #E5E7EB', marginBottom: '16px',
-    };
-    const badgeStyle = (colors) => ({
-        display: 'inline-block',
-        background: colors.bg, color: colors.color,
-        padding: '3px 10px', borderRadius: '8px',
-        fontSize: '11px', fontWeight: 700,
-    });
-    const selStyle = {
-        padding: '8px 12px', borderRadius: '9px', border: '1.5px solid #E2E8F0',
-        fontSize: '12px', outline: 'none', background: 'white', cursor: 'pointer',
-    };
-
-    return (
-        <div style={{ fontFamily: "'Segoe UI', sans-serif" }}>
-
-            {/* Header */}
-            <div style={{ marginBottom: '20px' }}>
-                <h3 style={{ fontWeight: 800, color: '#1E293B', fontSize: '22px', margin: 0 }}>📋 Transactions</h3>
-                <p style={{ color: '#94A3B8', fontSize: '13px', margin: '4px 0 0' }}>
-                    {isSupervisor ? 'Review approval requests and monitor transaction logs' : 'View your transaction history'}
-                </p>
+      {/* Filters */}
+      <div className="animate-fadeInUp delay-2 pos-card" style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
+            <div style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
             </div>
-
-            {/* Supervisor Action Queue: ONLY for Post-Voids */}
-            {isSupervisor && pendingRequests.length > 0 && (
-                <div style={{ ...cardStyle, border: '2px solid #C7D2FE', background: '#F5F3FF' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
-                        <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#EEF2FF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' }}>⏳</div>
-                        <div>
-                            <div style={{ fontWeight: 800, color: '#3730A3', fontSize: '15px' }}>
-                                Approval Requests ({pendingRequests.length})
-                            </div>
-                            <div style={{ color: '#6366F1', fontSize: '12px' }}>Sensitive actions requiring your authorization</div>
-                        </div>
-                    </div>
-
-                    {pendingRequests.map(entry => (
-                        <div key={entry.id} style={{ background: 'white', borderRadius: '12px', padding: '16px', marginBottom: '10px', border: '1px solid #DDD6FE' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
-                                <div>
-                                    <div style={{ fontWeight: 700, color: '#1E293B', fontSize: '13.5px', marginBottom: '2px' }}>{entry.itemName}</div>
-                                    <div style={{ fontSize: '12px', color: '#64748B' }}>
-                                        Requested by <strong>{entry.actorName || entry.actor}</strong>
-                                    </div>
-                                </div>
-                                <div style={{ fontWeight: 800, color: '#4F46E5', fontSize: '15px' }}>
-                                    ₱{entry.total?.toLocaleString('en', { minimumFractionDigits: 2 })}
-                                </div>
-                            </div>
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                                <button onClick={() => approvePostVoid(entry)} style={{ flex: 1, padding: '9px', borderRadius: '9px', border: 'none', background: '#10B981', color: 'white', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>✓ Approve</button>
-                                <button onClick={() => rejectPostVoid(entry)} style={{ flex: 1, padding: '9px', borderRadius: '9px', border: 'none', background: '#EF4444', color: 'white', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>✕ Reject</button>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            )}
-
-            {/* Stats */}
-            <div className="row g-3 mb-3">
-                {[
-                    { label: 'Total Logs', value: transactionLogs.length, icon: '🧾', bg: '#F8FAFC', color: '#1E293B' },
-                    { label: 'Revenue', value: `₱${totalRevenue.toLocaleString()}`, icon: '💰', bg: '#F0FDF4', color: '#059669' },
-                    { label: 'Voided Items', value: voidCount, icon: '🗑️', bg: '#FFFBEB', color: '#D97706' },
-                    { label: 'Canceled Sales', value: cancelCount, icon: '✕', bg: '#FEF2F2', color: '#DC2626' },
-                ].map(s => (
-                    <div className="col-6 col-md-3" key={s.label}>
-                        <div style={{ ...cardStyle, marginBottom: 0, background: s.bg, display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <div style={{ fontSize: '22px' }}>{s.icon}</div>
-                            <div>
-                                <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 700 }}>{s.label}</div>
-                                <div style={{ fontSize: '18px', fontWeight: 800, color: s.color }}>{s.value}</div>
-                            </div>
-                        </div>
-                    </div>
-                ))}
-            </div>
-
-            {/* Filter Bar */}
-            <div style={{ ...cardStyle, padding: '14px 18px' }}>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
-                    <span style={{ fontSize: '12px', fontWeight: 700, color: '#64748B' }}>Filter:</span>
-                    <select value={filterType} onChange={e => setFilterType(e.target.value)} style={selStyle}>
-                        {allTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                    <input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} style={selStyle} />
-                    <span style={{ marginLeft: 'auto', fontSize: '12px', color: '#94A3B8' }}>
-                        Showing {filtered.length} entries
-                    </span>
-                </div>
-            </div>
-
-            {/* Log Table */}
-            <div style={cardStyle}>
-                <h6 style={{ fontWeight: 700, marginBottom: '16px', color: '#374151', fontSize: '14px' }}>📜 Audit & History</h6>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {filtered.map(entry => {
-                        const typeColor = TYPE_COLORS[entry.type] || { bg: '#F1F5F9', color: '#64748B', dot: '#94A3B8' };
-                        const statusColor = STATUS_COLORS[entry.status] || { bg: '#F1F5F9', color: '#94A3B8' };
-                        const isExpanded = expandedId === entry.id;
-
-                        return (
-                            <div key={entry.id} style={{ background: '#F8FAFC', borderRadius: '12px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', cursor: 'pointer' }} onClick={() => setExpandedId(isExpanded ? null : entry.id)}>
-                                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: typeColor.dot }} />
-                                    <div style={{ flex: 1 }}>
-                                        <div style={{ display: 'flex', gap: '8px' }}>
-                                            <span style={badgeStyle(typeColor)}>{entry.type}</span>
-                                            <span style={badgeStyle(statusColor)}>{entry.status}</span>
-                                        </div>
-                                        <div style={{ fontSize: '12px', color: '#64748B', marginTop: '3px' }}>
-                                            <strong>{entry.actorName || entry.actor}</strong> · {entry.itemName}
-                                        </div>
-                                    </div>
-                                    <div style={{ textAlign: 'right' }}>
-                                        <div style={{ fontWeight: 700, fontSize: '13px' }}>₱{(entry.total || 0).toLocaleString()}</div>
-                                        <div style={{ fontSize: '11px', color: '#94A3B8' }}>{new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-                                    </div>
-                                </div>
-                                {isExpanded && (
-                                    <div style={{ borderTop: '1px solid #E2E8F0', padding: '14px 16px', background: 'white', fontSize: '12.5px' }}>
-                                        <div style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, marginBottom: '4px' }}>AUDIT DETAILS</div>
-                                        <div style={{ color: '#374151', lineHeight: '1.5' }}>
-                                            {entry.reason ? `Reason: ${entry.reason}` : 'No reason provided.'}
-                                            {entry.reviewedBy && <div style={{ marginTop: '4px', color: '#6366F1' }}>Approved by: {entry.reviewedBy}</div>}
-                                            {entry.rejectReason && <div style={{ marginTop: '4px', color: '#EF4444' }}>Rejection Reason: {entry.rejectReason}</div>}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
+            <input className="pos-input" style={{ paddingLeft: 34 }} placeholder="Search by receipt # or cashier..." value={search} onChange={e => setSearch(e.target.value)} />
+          </div>
+          <input type="date" className="pos-input" style={{ width: 160 }} value={dateFilter} onChange={e => setDateFilter(e.target.value)} />
+          {(search || dateFilter) && (
+            <button className="btn-pos-secondary" style={{ fontSize: 12 }} onClick={() => { setSearch(''); setDateFilter(''); }}>
+              Clear Filters
+            </button>
+          )}
+          {lastReceipt && (
+            <button className="btn-pos-secondary" style={{ fontSize: 12 }} onClick={() => setViewTx(lastReceipt)}>
+              🖨️ Reprint Last
+            </button>
+          )}
         </div>
-    );
-}
+      </div>
 
-export default Transactions;
+      {/* Table */}
+      <div className="pos-card animate-fadeInUp delay-3" style={{ padding: 0, overflow: 'hidden' }}>
+        <div style={{ overflowX: 'auto' }}>
+          <table className="pos-table">
+            <thead>
+              <tr>
+                <th>Receipt #</th>
+                <th>Date & Time</th>
+                <th>Cashier</th>
+                <th>Items</th>
+                <th>Subtotal</th>
+                <th>Discount</th>
+                <th>Total</th>
+                <th>Payment</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={9} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                    No transactions found
+                  </td>
+                </tr>
+              ) : filtered.map(tx => (
+                <tr key={tx.id}>
+                  <td><span style={{ fontFamily: 'var(--font-display)', color: 'var(--accent-green)', fontWeight: 700 }}>#{tx.id}</span></td>
+                  <td style={{ fontSize: 12 }}>
+                    <div style={{ color: 'var(--text-primary)' }}>{new Date(tx.timestamp).toLocaleDateString('en-PH')}</div>
+                    <div style={{ color: 'var(--text-muted)' }}>{new Date(tx.timestamp).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}</div>
+                  </td>
+                  <td style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{tx.cashierName}</td>
+                  <td>{tx.items?.length || 0} items</td>
+                  <td>{fmt(tx.subtotal || 0)}</td>
+                  <td>
+                    {tx.discount > 0
+                      ? <span className="pos-badge badge-amber">{tx.discount}%</span>
+                      : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                  </td>
+                  <td><span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, color: 'var(--text-primary)' }}>{fmt(tx.total)}</span></td>
+                  <td><span className="pos-badge badge-blue">{tx.paymentMethod}</span></td>
+                  <td>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={() => setViewTx(tx)} className="btn-pos-secondary" style={{ padding: '4px 10px', fontSize: 11 }}>View</button>
+                      {user?.role === 'Cashier' && !postVoidRequests.find(r => r.transactionId === tx.id) && (
+                        <button onClick={() => setPostVoidTx(tx)} style={{ padding: '4px 10px', fontSize: 11, borderRadius: 8, border: '1px solid rgba(255,77,143,0.3)', background: 'rgba(255,77,143,0.08)', color: 'var(--accent-pink)', cursor: 'pointer' }}>
+                          Void
+                        </button>
+                      )}
+                      {postVoidRequests.find(r => r.transactionId === tx.id) && (
+                        <span className="pos-badge badge-amber" style={{ fontSize: 10 }}>
+                          {postVoidRequests.find(r => r.transactionId === tx.id)?.status}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Receipt modal */}
+      {viewTx && (
+        <div className="modal-overlay" onClick={() => setViewTx(null)}>
+          <div onClick={e => e.stopPropagation()}>
+            <ReceiptDisplay tx={viewTx} onClose={() => setViewTx(null)} />
+          </div>
+        </div>
+      )}
+
+      {/* Post-void request modal */}
+      {postVoidTx && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3 style={{ marginBottom: 8 }}>Request Post-Void</h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 16 }}>
+              Submit a void request for <strong style={{ color: 'var(--accent-green)' }}>Receipt #{postVoidTx.id}</strong> ({fmt(postVoidTx.total)}).
+              A supervisor will need to approve this.
+            </p>
+            <textarea
+              className="pos-input"
+              style={{ resize: 'vertical', minHeight: 80, fontFamily: 'var(--font-body)' }}
+              placeholder="Enter reason for void request..."
+              value={postVoidReason}
+              onChange={e => setPostVoidReason(e.target.value)}
+            />
+            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+              <button onClick={() => { setPostVoidTx(null); setPostVoidReason(''); }} className="btn-pos-secondary" style={{ flex: 1, justifyContent: 'center' }}>Cancel</button>
+              <button onClick={handlePostVoid} disabled={!postVoidReason.trim()} className="btn-pos-danger" style={{ flex: 1, justifyContent: 'center', opacity: !postVoidReason.trim() ? 0.5 : 1 }}>Submit Request</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
